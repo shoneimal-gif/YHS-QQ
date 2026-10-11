@@ -10,6 +10,7 @@ Alpaca 模式默认只生成交易预览，添加 `--execute-paper` 才能提交
 Codex 云端开发与离线验证任务说明位于 [CLOUD_TASK.txt](CLOUD_TASK.txt)，可从包含此仓库的已发布云端环境开始。
 本地模拟订单的企业微信推送配置见 [WECOM_NOTIFICATIONS.md](WECOM_NOTIFICATIONS.md)。
 个人微信的 pushplus 订单推送配置见 [PUSHPLUS_NOTIFICATIONS.md](PUSHPLUS_NOTIFICATIONS.md)。
+Discord `#yhs-paper` 频道的订单推送配置见 [DISCORD_NOTIFICATIONS.md](DISCORD_NOTIFICATIONS.md)。
 
 ## 快速运行
 

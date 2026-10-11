@@ -17,6 +17,7 @@ SOURCE_FILES = (
     "alpaca_client.py", "alpaca_trader.py", "config.py", "detector.py",
     "main.py", "mock_replay.py", "paper_trader.py", "yhs_client.py", "wecom_notifications.py",
     "pushplus_notifications.py",
+    "discord_notifications.py",
     "config.alpaca_paper_100k.json", "alpaca_policy_100k.json",
 )
 LINUX_FILES = (
