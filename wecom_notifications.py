@@ -108,15 +108,46 @@ def _normalise_event(event: dict) -> dict:
     timestamp = datetime.fromisoformat(result["timestamp"].replace("Z", "+00:00"))
     if timestamp.utcoffset() is None:
         raise ValueError
-    for key in ("requested_quantity", "filled_quantity", "new_fill_quantity", "remaining_quantity", "price", "realized_pnl", "strike"):
+    for key in ("requested_quantity", "filled_quantity", "new_fill_quantity", "remaining_quantity", "price", "realized_pnl", "strike",
+                "new_fill_price", "new_fill_notional_usd", "cumulative_notional_usd", "limit_price",
+                "confirmed_fill_avg_price", "confirmed_notional_usd", "new_realized_pnl", "partial_realized_pnl"):
         if event.get(key) is not None:
+            if isinstance(event[key], bool):
+                raise ValueError
             value = float(event[key])
-            if not math.isfinite(value) or (key != "realized_pnl" and value < 0):
+            if not math.isfinite(value) or (key not in {"realized_pnl", "new_fill_notional_usd", "new_realized_pnl", "partial_realized_pnl"} and value < 0):
                 raise ValueError
             result[key] = value
     if "requested_quantity" not in result or "filled_quantity" not in result:
         raise ValueError
-    for key in ("order_id", "client_order_id", "exit_reason", "right", "expiration", "action", "order_type"):
+    for key in ("requested_quantity", "filled_quantity", "new_fill_quantity", "remaining_quantity"):
+        if key in result and result[key] != int(result[key]):
+            raise ValueError
+    if (result["requested_quantity"] <= 0
+            or result["filled_quantity"] > result["requested_quantity"]
+            or result.get("new_fill_quantity", 0) > result["filled_quantity"]):
+        raise ValueError
+    for price_key, quantity_key in (("price", "filled_quantity" if result["kind"] == "filled" else "requested_quantity"),
+                                   ("limit_price", "requested_quantity"),
+                                   ("confirmed_fill_avg_price", "filled_quantity"),
+                                   ("new_fill_price", "new_fill_quantity")):
+        if price_key in result and not math.isfinite(result[price_key] * result.get(quantity_key, 0) * 100):
+            raise ValueError
+    if "cumulative_notional_usd" in result:
+        if "price" not in result or not math.isclose(result["cumulative_notional_usd"], result["price"] * result["filled_quantity"] * 100, abs_tol=1e-6):
+            raise ValueError
+    if "new_fill_price" in result:
+        if not result.get("new_fill_quantity") or not math.isclose(result.get("new_fill_notional_usd", -1), result["new_fill_price"] * result["new_fill_quantity"] * 100, abs_tol=1e-6):
+            raise ValueError
+    if ("confirmed_notional_usd" in result) != ("confirmed_fill_avg_price" in result):
+        raise ValueError
+    if "confirmed_notional_usd" in result:
+        if "confirmed_fill_avg_price" not in result or not math.isclose(result["confirmed_notional_usd"], result["confirmed_fill_avg_price"] * result["filled_quantity"] * 100, abs_tol=1e-6):
+            raise ValueError
+    if "realized_pnl" in result and (result["side"] != "sell" or result["kind"] != "filled"
+                                    or result.get("remaining_quantity") != 0):
+        raise ValueError
+    for key in ("order_id", "client_order_id", "exit_reason", "right", "expiration", "action", "order_type", "broker_status"):
         if event.get(key):
             result[key] = str(event[key])[:240].replace("\r", " ").replace("\n", " ")
     return result
@@ -146,25 +177,41 @@ def _message(event: dict) -> str:
         lines.append(f"行权价：${event['strike']:g}")
     lines.append(f"数量：本次订单 {event['requested_quantity']:g} 张；累计成交 {event['filled_quantity']:g} 张")
     if kind == "filled" and "new_fill_quantity" in event:
-        lines.append(f"本次新增确认成交：{event['new_fill_quantity']:g} 张")
+        if event['new_fill_quantity']:
+            lines.append(f"本次新增确认成交：{event['new_fill_quantity']:g} 张")
+        else:
+            lines.append("券商修正累计成交均价（无新增张数）。")
+        if "new_fill_price" in event:
+            lines.append(f"本次新增成交均价：${event['new_fill_price']:.4f}/股")
+        if "new_fill_notional_usd" in event:
+            lines.append(f"本次确认成交金额变动：${event['new_fill_notional_usd']:.2f}（未含费用）")
     if "remaining_quantity" in event:
         lines.append(f"该笔策略仓位剩余：{event['remaining_quantity']:g} 张（截至观察时间）")
-    if "price" in event:
-        label = "成交均价" if kind == "filled" else "限价"
-        price = event["price"]
+    price = event.get("price") if kind == "filled" else event.get("limit_price", event.get("price"))
+    if price is not None:
+        label = "成交均价" if kind == "filled" else "委托限价"
         lines.append(f"{label}：${price:.4f}/股（每张 = 100 股，约 ${price * 100:.2f}/张）")
         if kind == "filled":
             flow = "累计买入金额" if event["side"] == "buy" else "本单累计卖出金额"
             lines.append(f"{flow}：${price * event['filled_quantity'] * 100:.2f}（未含费用）")
-        elif kind == "submitted":
+        else:
             lines.append(f"按限价计算的委托金额：${price * event['requested_quantity'] * 100:.2f}（未含费用，尚待成交确认）")
+    if kind != "filled" and "confirmed_fill_avg_price" in event:
+        lines.append(f"已确认成交均价：${event['confirmed_fill_avg_price']:.4f}/股")
+        lines.append(f"本单累计已确认成交金额：${event['confirmed_notional_usd']:.2f}（未含费用）")
     identity = event.get("order_id") or event.get("client_order_id")
     if identity:
         lines.append("订单尾号：" + identity[-8:])
     if event.get("exit_reason"):
         lines.append("退出原因：" + event["exit_reason"])
+    if event.get("broker_status"):
+        lines.append("券商订单状态：" + event["broker_status"])
     if "realized_pnl" in event:
-        lines.append(f"已实现收益：${event['realized_pnl']:+.2f}（未含费用）")
+        lines.append(f"整笔完整平仓毛盈亏：${event['realized_pnl']:+.2f}（未含费用）")
+    if "new_realized_pnl" in event:
+        lines.append(f"本次已确认平仓毛盈亏：${event['new_realized_pnl']:+.2f}（未含费用）")
+    if "partial_realized_pnl" in event and "realized_pnl" not in event:
+        lines.append(f"累计已确认平仓毛盈亏：${event['partial_realized_pnl']:+.2f}（未含费用；未成交剩余仓位不计入）")
     if kind == "submitted":
         lines.append("提交不等于成交，成交另行确认通知。")
     elif kind == "unknown":

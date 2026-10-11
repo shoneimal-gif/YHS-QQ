@@ -31,11 +31,13 @@ for unit in yhs-qq.service yhs-qq.timer; do
       fail "$unit is $active_state. Stop it explicitly before upgrading; no running program has been stopped." ;;
   esac
 done
-timer_enabled_state="$(systemctl is-enabled yhs-qq.timer 2>/dev/null || true)"
-case "$timer_enabled_state" in
-  enabled|enabled-runtime)
-    fail 'yhs-qq.timer is enabled. Disable it explicitly before upgrading to prevent a scheduled-start race; no timer has been changed.' ;;
-esac
+for unit in yhs-qq.service yhs-qq.timer; do
+  enabled_state="$(systemctl is-enabled "$unit" 2>/dev/null || true)"
+  case "$enabled_state" in
+    enabled|enabled-runtime)
+      fail "$unit is enabled. Disable it explicitly before upgrading to prevent an automatic-start race; no unit has been changed." ;;
+  esac
+done
 
 missing=()
 for package in python3 ca-certificates tzdata; do
@@ -64,6 +66,8 @@ manifest = json.loads(manifest_path.read_text(encoding='utf-8'))
 files = manifest.get('files') if isinstance(manifest, dict) else None
 if not isinstance(files, dict) or not files:
     raise SystemExit('The manifest files mapping is missing.')
+if manifest.get('contains_credentials') is not False:
+    raise SystemExit('The deployment manifest must explicitly exclude credentials.')
 required = {
     'main.py', 'config.py', 'detector.py', 'mock_replay.py', 'paper_trader.py',
     'yhs_client.py', 'alpaca_client.py', 'alpaca_trader.py', 'wecom_notifications.py',
@@ -81,6 +85,12 @@ for name, expected in files.items():
     path = PurePosixPath(name)
     if path.is_absolute() or any(part in ('', '.', '..') for part in name.split('/')):
         raise SystemExit('Manifest paths must stay within the bundle.')
+    if name not in required | {'CLOUD_DEPLOY.md', 'DISCORD_NOTIFICATIONS.md'}:
+        private_names = {'credentials.json', 'auth.json', 'discord.json', 'wecom.json', 'pushplus.json'}
+        if (not name.startswith('runtime/') or '.private_config' in path.parts
+                or path.name.startswith('.env') or path.name in private_names
+                or path.suffix.lower() in {'.lock', '.tmp', '.log', '.pyc'}):
+            raise SystemExit('The deployment manifest contains unsupported or private configuration files.')
     current = root
     for part in path.parts:
         current = current / part
@@ -196,17 +206,19 @@ done
 [[ ! -L "$APP/CLOUD_MANIFEST.json" ]] || fail 'Refusing to replace an app manifest symlink.'
 [[ ! -e "$APP/CLOUD_MANIFEST.json" || -f "$APP/CLOUD_MANIFEST.json" ]] || fail 'The app manifest path is not a regular file.'
 install -m 0644 -o root -g root -- "$SOURCE/CLOUD_MANIFEST.json" "$APP/CLOUD_MANIFEST.json"
-if /usr/bin/python3 - "$SOURCE/CLOUD_MANIFEST.json" <<'PY'
+for document in CLOUD_DEPLOY.md DISCORD_NOTIFICATIONS.md; do
+if /usr/bin/python3 - "$SOURCE/CLOUD_MANIFEST.json" "$document" <<'PY'
 import json
 import sys
 with open(sys.argv[1], encoding='utf-8') as stream:
-    raise SystemExit(0 if 'CLOUD_DEPLOY.md' in json.load(stream)['files'] else 1)
+    raise SystemExit(0 if sys.argv[2] in json.load(stream)['files'] else 1)
 PY
 then
-  [[ ! -L "$APP/CLOUD_DEPLOY.md" ]] || fail 'Refusing to replace a documentation symlink.'
-  [[ ! -e "$APP/CLOUD_DEPLOY.md" || -f "$APP/CLOUD_DEPLOY.md" ]] || fail 'The documentation path is not a regular file.'
-  install -m 0644 -o root -g root -- "$SOURCE/CLOUD_DEPLOY.md" "$APP/CLOUD_DEPLOY.md"
+  [[ ! -L "$APP/$document" ]] || fail 'Refusing to replace a documentation symlink.'
+  [[ ! -e "$APP/$document" || -f "$APP/$document" ]] || fail 'The documentation path is not a regular file.'
+  install -m 0644 -o root -g root -- "$SOURCE/$document" "$APP/$document"
 fi
+done
 if [[ ! -L "$APP/runtime" ]]; then
   ln -s -- "$RUNTIME" "$APP/runtime"
 fi

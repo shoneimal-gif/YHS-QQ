@@ -1,0 +1,150 @@
+{
+  "validated_at": "2026-10-11T16:51:52+08:00",
+  "timezone": "Asia/Shanghai",
+  "repository": "shoneimal-gif/YHS-QQ",
+  "working_directory": "/workspace/YHS-QQ",
+  "base_commit": "3c6b26805114e025b156307acb5be2643928a5dd",
+  "source_sha256": "80e24dd0ce51b1677f533f10492f4e770fb6c0fefafef3e71339d05930b80285",
+  "source_file_sha256": {
+    "alpaca_client.py": "08e05a11f45c4eb1541527d66093ebb9cfc6b31d25f15a79dafc1493866a7efb",
+    "alpaca_policy_100k.json": "d555fffa195a267322d66b3fb8d173b906fa8f37b270d52386043756d915b6ea",
+    "alpaca_trader.py": "0eeadd565f583899266adaacc06b68ab4dc0cc883ed07fa982749256337e190e",
+    "config.alpaca_paper_100k.json": "0654c2c2749a89941b0becc748ca74a70e252285d7348c4a998a988bd40c3676",
+    "config.py": "b8c779beffe44d20571ef846cc5274620e8baa18580b073168916d9be4874cf7",
+    "deploy/linux/configure_keys.py": "b5f39e222709ae69c8836ac6e8291da95bf6c5da2fcc00aeaec1d03b7f642ebd",
+    "deploy/linux/install.sh": "8857b9e7dbf5ed3291efbc543191727aa03bc72af976d096a9ae9f49bc330628",
+    "deploy/linux/runner.py": "5d9ac428cd34b20f47d950bb3f6ecaab9fb9f78b07618c3b65d78f9f6d82e53d",
+    "deploy/linux/yhs-qq.service": "651339b5e40c5ce0285865de64048e8c3b46712dc9aeb01f3a4403da46e5a558",
+    "deploy/linux/yhs-qq.timer": "942e2c1fc21881473fab75f902f0ed09210a4337824d86c13ac48a414ec67c4b",
+    "deploy/package_cloud.py": "5a68300a3eea3cb0684e2a84e2465cec809807702c0b87ed804fc9bd2cb89dd8",
+    "detector.py": "92006b24f1a2a94cfdc90d8acbb14eda2a5b71ed2f1468586c569fde84f182c1",
+    "discord_notifications.py": "165dc4b98c226a34dd9c2d54dc76286115be5645d1bd0eb27c8cb5836e38a963",
+    "main.py": "72f5e040941b16574ad45411d5cebd00e7d5895a2e3349e9c44ddce8299bd82b",
+    "mock_replay.py": "179bb6d4224978e47ae73a09252914d36a5272a48742232b4e561e4977e0a83c",
+    "paper_trader.py": "2199e3ad9c829d1e38bdb783499cf49b34a43679e833d54eb89588cc6449ea88",
+    "pushplus_notifications.py": "46b69f01e3d4d4b1c9ea8959940e93e8c165467d52795cadc26eb80603583aeb",
+    "tests/test_alpaca_client.py": "cc1f79aff8f1d4a7f0182a2b570c1a39769ee5138bce7e786c1ab88a8fead309",
+    "tests/test_alpaca_trader.py": "b0333e7910ccdf2b458d46d467647cc1806f83e4c6c7857893de761b9281a0b3",
+    "tests/test_client.py": "ac1a46273f4d637a7eea1a5a947dc7b05d75ec4ca44593cf4d57ae926308e4b3",
+    "tests/test_deploy.py": "c2b041a0934d5fae7116f290b50a8f04d79c6c1d5763b2965dd0e3be84560631",
+    "tests/test_discord_notifications.py": "4bb701f2319d4856b9ab3378b2b6ca85decf034aff25206584a376f0b60dbafd",
+    "tests/test_main.py": "b05a95e5ae1d306e78dc27f5daf1c05495ec4a3cc01e3f691ab9cc360de36c8c",
+    "tests/test_main_paper.py": "742b032af3498c5193b1e9ee5e4ede9f935e7397c2c7a95649b8cfb3d206daa5",
+    "tests/test_system.py": "0aa62456db127293c8a2b3207f2873d15e881567b16b3100e994a5e6290a1f62",
+    "wecom_notifications.py": "a5be96f23f58eadd843309b32b7e152039b4cb1e88e4ec0b801aa5d71d75606a",
+    "yhs_client.py": "89937800e11acf9db964769be848cf888561b01913bbbfd490bc2a2f68fbefad"
+  },
+  "python": "3.12.14",
+  "os": "Linux-6.18.44-x86_64-with-glibc2.41",
+  "baseline_tests": {
+    "run": 72,
+    "passed": 70,
+    "errors": 2,
+    "failures": 0,
+    "exit_code": 1,
+    "cause": "两个 FakeTimer 缺少 is_alive/join 关闭接口"
+  },
+  "tests": {
+    "command": "PYTHONPATH=/tmp/yhs-offline-guard python3 -X utf8 -m unittest discover -s tests -v",
+    "run": 192,
+    "passed": 192,
+    "errors": 0,
+    "failures": 0,
+    "expected_failures": 0,
+    "skipped": 0,
+    "elapsed_seconds": 6.933,
+    "exit_code": 0,
+    "by_module": {
+      "test_alpaca_client": 26,
+      "test_alpaca_trader": 36,
+      "test_client": 23,
+      "test_deploy": 20,
+      "test_discord_notifications": 26,
+      "test_main": 12,
+      "test_main_paper": 11,
+      "test_system": 38
+    },
+    "log_path": "/tmp/yhs-final-tests.log",
+    "real_socket_connections_blocked": true
+  },
+  "replay": {
+    "command": "PYTHONPATH=/tmp/yhs-offline-guard python3 -X utf8 main.py --replay --date 2026-10-09 --seed 7 --output-dir /tmp/yhs-qq-validation.ryTotN/output",
+    "exit_code": 0,
+    "output_path": "/tmp/yhs-qq-validation.ryTotN/output",
+    "synthetic": true,
+    "observation_steps": 78,
+    "total_trades": 5,
+    "open_positions": 0,
+    "api_quota_used": 0,
+    "realized_pnl": 392.0849446915988,
+    "json_csv_ledger_consistent": true,
+    "consistency_command": "python3 /tmp/yhs_validate_replay.py",
+    "consistency_exit_code": 0
+  },
+  "acceptance": {
+    "A": {
+      "status": "passed",
+      "scope": "离线 YHS 请求限频、额度、重试、鉴权与每日榜单 claim/缓存；不验证真实服务字段"
+    },
+    "B": {
+      "status": "passed",
+      "scope": "离线筛选、GEX/Flow、报价、过期/未来时间、疲劳去重及回放因果性"
+    },
+    "C": {
+      "status": "passed",
+      "scope": "Paper 合成账户预算/数量、预留、未知订单占位、风险配置不可静默重置；风险参数文件未改"
+    },
+    "D": {
+      "status": "passed",
+      "scope": "固定 Paper 主机、拒绝未知/实盘路由、预览不提交与写请求不自动重试；合成 REST"
+    },
+    "E": {
+      "status": "passed",
+      "scope": "合成部分/全部成交、取消/拒绝/未知、订单意图崩溃恢复、累计金额幂等、未确认退出不记完整平仓收益、持久化通知交接"
+    },
+    "F": {
+      "status": "passed",
+      "scope": "模拟 SIGTERM 取消/恢复处理器、半日市日历、休市不请求 YHS、健康/未结关停；未执行真实盘中退出"
+    },
+    "G": {
+      "status": "passed",
+      "scope": "同主机同安装账户锁、损坏/失去绑定的账本拒绝恢复、合成 runtime 原子迁移/中断恢复；跨主机不互斥"
+    },
+    "H": {
+      "status": "unverified",
+      "verified_checks": [
+        "20 项 Linux 部署组件离线测试",
+        "安装器 shell 语法",
+        "manifest SHA256 与临时账本导入块实际执行",
+        "timer 表达式冬夏 DST 解析"
+      ],
+      "unverified": [
+        "完整 sudo 安装/用户创建/包管理/真实目录迁移",
+        "systemd LoadCredential 运行与服务启动停止",
+        "timer 实际触发",
+        "Windows/SSH 上传"
+      ]
+    },
+    "I": {
+      "status": "passed",
+      "scope": "合成 JSON/CSV/账本笔数、现金和盈亏一致；估值/Paper/费用边界、通知脱敏与只启用 Discord"
+    }
+  },
+  "real_market_api_called": false,
+  "broker_orders_submitted": false,
+  "broker_orders_cancelled": false,
+  "real_notifications_sent": false,
+  "personal_credentials_read": false,
+  "private_runtime_read": false,
+  "profitability_validated": false,
+  "paper_deployed": false,
+  "unverified": [
+    "真实 YHS/Alpaca 端到端行情、授权、盘中订单成交与失联恢复",
+    "真实 Discord Webhook/手机提醒",
+    "完整交易日及交易所全年日历",
+    "已终结订单的迟到成交更正/trade-bust、券商替换链自动恢复",
+    "完整 Linux/systemd 安装运行与 Windows/SSH 路径",
+    "历史/真实市场盈利能力"
+  ],
+  "delivery_limitation": "Discord 已创建消息而响应丢失时，重试可能重复；不保证 exactly-once。"
+}
