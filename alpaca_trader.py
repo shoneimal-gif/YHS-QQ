@@ -287,7 +287,8 @@ class AlpacaLedgerError(RuntimeError):
 class AlpacaPaperTrader:
     def __init__(self, client: Any, config: Any, state_path: str | Path | None = None, *,
                  policy: AlpacaRiskConfig | dict[str, Any] | None = None,
-                 execute_paper: bool = False, now_fn: Any = None):
+                 execute_paper: bool = False, now_fn: Any = None,
+                 notification_sink: Any = None):
         self._lock = threading.RLock()
         self._entry_stop = threading.Event()
         self._now_fn = now_fn or (lambda: datetime.now(timezone.utc))
@@ -297,6 +298,8 @@ class AlpacaPaperTrader:
         self.output_dir = Path(config.output_dir)
         self.state_path = Path(state_path) if state_path is not None else self.output_dir / "alpaca_paper_state.json"
         self.execute_paper = bool(execute_paper)
+        self.notification_sink = notification_sink
+        self._notification_events: dict[str, dict[str, Any]] = {}
         self.initial_cash = self.policy.strategy_budget_usd
         self.account_id: str | None = None
         self.positions: list[AlpacaPosition] = []
@@ -432,6 +435,41 @@ class AlpacaPaperTrader:
                    "positions": serialized([asdict(item) for item in self.positions]),
                    "latched_halts": sorted(self._latched_halts)}
         self._atomic_write(self.state_path, lambda stream: json.dump(payload, stream, ensure_ascii=False, indent=2, allow_nan=False))
+        # Trade state is committed first. Notification failures never change order/risk state.
+        if self.notification_sink is not None:
+            pending, self._notification_events = self._notification_events, {}
+            for identifier, event in pending.items():
+                try:
+                    accepted = self.notification_sink(event)
+                except Exception:
+                    accepted = False
+                if not accepted:
+                    self._notification_events[identifier] = event
+                    LOGGER.warning("企业微信通知未能入队，后续持久化时重试；交易账本已保存")
+
+    def _queue_order_notice(self, position: AlpacaPosition, kind: str, now: datetime, *,
+                            entry: bool, client_id: str | None = None,
+                            order_id: str | None = None, requested: float | None = None,
+                            filled: float = 0, price: float | None = None) -> None:
+        if self.notification_sink is None or not self.execute_paper:
+            return
+        identifier = client_id or (position.entry_client_order_id if entry else position.exit_client_order_id)
+        if not identifier:
+            return
+        side = "buy" if entry else "sell"
+        key = hashlib.sha256(f"{identifier}:{side}:{kind}:{int(filled)}".encode()).hexdigest()
+        event = {
+            "event_id": key, "kind": kind, "side": side,
+            "ticker": position.ticker, "contract_symbol": position.contract_symbol,
+            "requested_quantity": int(requested if requested is not None else
+                                      position.quantity if entry else position.remaining_quantity),
+            "filled_quantity": int(filled), "price": price,
+            "order_id": order_id, "client_order_id": identifier,
+            "timestamp": now.astimezone(timezone(timedelta(hours=8))).isoformat(),
+            "exit_reason": position.exit_reason if not entry else None,
+            "realized_pnl": position.realized_pnl if kind == "filled" and not entry and position.status == "CLOSED" else None,
+        }
+        self._notification_events[key] = event
 
     @property
     @synchronized
@@ -721,6 +759,7 @@ class AlpacaPaperTrader:
                 self._network_ok = False
                 self._blocks.add("订单提交未知")
                 LOGGER.error("%s %s：%s", ticker, position.hold_reason, exc)
+                self._queue_order_notice(position, "unknown", now, entry=True)
             except SubmissionNotSent as exc:
                 position.status = "CANCELLED"
                 position.entry_order_state = "cancelled_before_submission"
@@ -731,6 +770,7 @@ class AlpacaPaperTrader:
                 position.entry_order_state = "rejected"
                 position.hold_reason = str(exc)
                 LOGGER.error("Paper开仓明确拒绝：%s", exc)
+                self._queue_order_notice(position, "rejected", now, entry=True)
             except (ValueError, TypeError, KeyError) as exc:
                 if position.status != "CANCELLED":
                     position.status = "ENTRY_UNKNOWN"
@@ -738,6 +778,7 @@ class AlpacaPaperTrader:
                     self._network_ok = False
                     self._blocks.add("订单响应无法安全解析")
                     LOGGER.error("Paper提交状态需对账：%s", exc)
+                    self._queue_order_notice(position, "unknown", now, entry=True)
             self._persist()
             return position if position.status in ACTIVE_STATUSES else None
         except AlpacaLedgerError:
@@ -756,6 +797,9 @@ class AlpacaPaperTrader:
         if str(order.get("client_order_id", "")) != expected_id or symbol_of(order.get("symbol")) != position.contract_symbol or str(order.get("side", "")) != ("buy" if entry else "sell"):
             raise AlpacaLedgerError("订单响应与本地归属不一致，拒绝使用其成交")
         state = str(order.get("status", "")).lower()
+        previous_order_id = position.entry_order_id if entry else position.exit_order_id
+        previous_state = position.entry_order_state if entry else position.exit_order_state
+        previous_fill = position.filled_quantity if entry else position.exit_order_filled_quantity
         filled = number(order.get("filled_qty", 0), "已成交张数")
         maximum_fill = position.quantity if entry else position.remaining_quantity + position.exit_order_filled_quantity
         if number(order.get("qty"), "订单请求张数", positive=True) != maximum_fill:
@@ -831,6 +875,28 @@ class AlpacaPaperTrader:
             else:
                 position.status = "PENDING_EXIT"
         position.last_reconciled_at = now
+        # Preserve the validated response before terminal exits clear per-order fields.
+        client_id = str(order["client_order_id"])
+        order_id = str(order["id"])
+        if previous_order_id != order_id and state not in {"rejected", "failed", "voided", "canceled", "cancelled", "expired"}:
+            self._queue_order_notice(position, "submitted", now, entry=entry,
+                                     client_id=client_id, order_id=order_id, requested=maximum_fill,
+                                     filled=filled, price=position.entry_limit_price if entry else None)
+        if filled > previous_fill:
+            self._queue_order_notice(position, "filled", now, entry=entry,
+                                     client_id=client_id, order_id=order_id, requested=maximum_fill,
+                                     filled=filled, price=float(order["filled_avg_price"]))
+        if state != previous_state or previous_order_id != order_id:
+            if state in {"rejected", "failed", "voided"}:
+                kind = "rejected"
+            elif state in {"canceled", "cancelled", "expired"}:
+                kind = "cancelled"
+            else:
+                kind = None
+            if kind:
+                self._queue_order_notice(position, kind, now, entry=entry,
+                                         client_id=client_id, order_id=order_id,
+                                         requested=maximum_fill, filled=filled)
 
     def _find_order(self, position: AlpacaPosition, *, entry: bool) -> dict[str, Any] | None:
         order_id = position.entry_order_id if entry else position.exit_order_id
@@ -906,12 +972,20 @@ class AlpacaPaperTrader:
             self._network_ok = False
             self._blocks.add("退出提交未知")
             LOGGER.error("%s：%s", position.hold_reason, exc)
+            self._queue_order_notice(position, "unknown", now, entry=False,
+                                     client_id=identifier, requested=int(payload["qty"]))
         except AlpacaError as exc:
             position.status = "OPEN"
             position.exit_order_id = None
             position.exit_client_order_id = None
             position.hold_reason = "出场明确拒绝，须下一轮重新核对仓位"
             LOGGER.error("Paper出场订单拒绝：%s", exc)
+            self._queue_order_notice(position, "rejected", now, entry=False,
+                                     client_id=identifier, requested=int(payload["qty"]))
+        except (ValueError, TypeError, KeyError):
+            self._queue_order_notice(position, "unknown", now, entry=False,
+                                     client_id=identifier, requested=int(payload["qty"]))
+            raise
         self._persist()
 
     def _mark_quote(self, position: AlpacaPosition, now: datetime, raw: Any) -> str | None:

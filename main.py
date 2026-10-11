@@ -498,6 +498,7 @@ def run_alpaca_paper(config: SystemConfig, capture_path: Path | None = None, *,
     policy = load_alpaca_policy(policy_path) if policy_path else AlpacaRiskConfig()
     broker = _load_alpaca_client(env_file)
     created_traders: list[Any] = []
+    created_notifiers: list[Any] = []
     try:
         account = broker.get_account()
         identifier = str(account.get("id") or "")
@@ -515,6 +516,19 @@ def run_alpaca_paper(config: SystemConfig, capture_path: Path | None = None, *,
                 trader = AlpacaPaperTrader(broker, settings, state_path=state_path,
                                            policy=policy, execute_paper=execute_paper)
                 created_traders.append(trader)
+                if execute_paper:
+                    try:
+                        from wecom_notifications import WeComNotifier, load_webhook
+                        webhook = load_webhook(Path(__file__).resolve().parent)
+                        if webhook:
+                            notifier = WeComNotifier(webhook, account_dir / "wecom_outbox.json")
+                            created_notifiers.append(notifier)
+                            trader.notification_sink = notifier.enqueue
+                            LOGGER.info("企业微信订单推送已启用；提交、成交及失败状态会分别通知")
+                        else:
+                            LOGGER.info("未配置企业微信机器人；订单推送未启用")
+                    except Exception:
+                        LOGGER.warning("企业微信配置或通知队列无法加载，订单推送未启用；不影响Paper账本")
                 return trader
             if not trading_day:
                 with runner_lock(config.output_dir):
@@ -543,6 +557,11 @@ def run_alpaca_paper(config: SystemConfig, capture_path: Path | None = None, *,
             atomic_json(config.output_dir / "summary.json", report)
             return report
     finally:
+        for notifier in created_notifiers:
+            try:
+                notifier.close(timeout=5)
+            except Exception:
+                LOGGER.warning("企业微信后台通知未完全结束，未发送内容保留供下次恢复")
         for trader in created_traders:
             trader.release_state_lock()
         broker.close()

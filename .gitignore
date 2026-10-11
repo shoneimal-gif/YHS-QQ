@@ -14,3 +14,4 @@ __pycache__/
 auth.json
 credentials.json
 .private_deploy/
+.private_config/
