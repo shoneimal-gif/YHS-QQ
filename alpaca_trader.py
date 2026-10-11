@@ -445,12 +445,13 @@ class AlpacaPaperTrader:
                     accepted = False
                 if not accepted:
                     self._notification_events[identifier] = event
-                    LOGGER.warning("企业微信通知未能入队，后续持久化时重试；交易账本已保存")
+                    LOGGER.warning("订单通知未能全部入队，后续持久化时重试；交易账本已保存")
 
     def _queue_order_notice(self, position: AlpacaPosition, kind: str, now: datetime, *,
                             entry: bool, client_id: str | None = None,
                             order_id: str | None = None, requested: float | None = None,
-                            filled: float = 0, price: float | None = None) -> None:
+                            filled: float = 0, price: float | None = None,
+                            new_fill: float | None = None) -> None:
         if self.notification_sink is None or not self.execute_paper:
             return
         identifier = client_id or (position.entry_client_order_id if entry else position.exit_client_order_id)
@@ -461,9 +462,14 @@ class AlpacaPaperTrader:
         event = {
             "event_id": key, "kind": kind, "side": side,
             "ticker": position.ticker, "contract_symbol": position.contract_symbol,
+            "right": position.right, "expiration": position.expiration,
+            "strike": position.strike, "action": position.action,
+            "order_type": "limit" if entry else "market",
             "requested_quantity": int(requested if requested is not None else
                                       position.quantity if entry else position.remaining_quantity),
             "filled_quantity": int(filled), "price": price,
+            "new_fill_quantity": int(new_fill) if new_fill is not None else None,
+            "remaining_quantity": int(position.remaining_quantity),
             "order_id": order_id, "client_order_id": identifier,
             "timestamp": now.astimezone(timezone(timedelta(hours=8))).isoformat(),
             "exit_reason": position.exit_reason if not entry else None,
@@ -885,7 +891,8 @@ class AlpacaPaperTrader:
         if filled > previous_fill:
             self._queue_order_notice(position, "filled", now, entry=entry,
                                      client_id=client_id, order_id=order_id, requested=maximum_fill,
-                                     filled=filled, price=float(order["filled_avg_price"]))
+                                     filled=filled, price=float(order["filled_avg_price"]),
+                                     new_fill=filled - previous_fill)
         if state != previous_state or previous_order_id != order_id:
             if state in {"rejected", "failed", "voided"}:
                 kind = "rejected"

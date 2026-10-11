@@ -67,6 +67,7 @@ if not isinstance(files, dict) or not files:
 required = {
     'main.py', 'config.py', 'detector.py', 'mock_replay.py', 'paper_trader.py',
     'yhs_client.py', 'alpaca_client.py', 'alpaca_trader.py', 'wecom_notifications.py',
+    'pushplus_notifications.py',
     'config.alpaca_paper_100k.json', 'alpaca_policy_100k.json',
     'deploy/linux/install.sh', 'deploy/linux/runner.py', 'deploy/linux/configure_keys.py',
     'deploy/linux/yhs-qq.service', 'deploy/linux/yhs-qq.timer',
@@ -181,7 +182,7 @@ else:
     print(f'Imported {copied} runtime files on initial installation.')
 PY
 
-for name in main.py config.py detector.py mock_replay.py paper_trader.py yhs_client.py alpaca_client.py alpaca_trader.py wecom_notifications.py config.alpaca_paper_100k.json alpaca_policy_100k.json; do
+for name in main.py config.py detector.py mock_replay.py paper_trader.py yhs_client.py alpaca_client.py alpaca_trader.py wecom_notifications.py pushplus_notifications.py config.alpaca_paper_100k.json alpaca_policy_100k.json; do
   [[ ! -L "$APP/$name" ]] || fail "Refusing to overwrite an app file symlink: $name."
   [[ ! -e "$APP/$name" || -f "$APP/$name" ]] || fail "The app file path is not a regular file: $name."
   install -m 0644 -o root -g root -- "$SOURCE/$name" "$APP/$name"

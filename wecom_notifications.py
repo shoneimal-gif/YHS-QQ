@@ -108,7 +108,7 @@ def _normalise_event(event: dict) -> dict:
     timestamp = datetime.fromisoformat(result["timestamp"].replace("Z", "+00:00"))
     if timestamp.utcoffset() is None:
         raise ValueError
-    for key in ("requested_quantity", "filled_quantity", "price", "realized_pnl"):
+    for key in ("requested_quantity", "filled_quantity", "new_fill_quantity", "remaining_quantity", "price", "realized_pnl", "strike"):
         if event.get(key) is not None:
             value = float(event[key])
             if not math.isfinite(value) or (key != "realized_pnl" and value < 0):
@@ -116,7 +116,7 @@ def _normalise_event(event: dict) -> dict:
             result[key] = value
     if "requested_quantity" not in result or "filled_quantity" not in result:
         raise ValueError
-    for key in ("order_id", "client_order_id", "exit_reason"):
+    for key in ("order_id", "client_order_id", "exit_reason", "right", "expiration", "action", "order_type"):
         if event.get(key):
             result[key] = str(event[key])[:240].replace("\r", " ").replace("\n", " ")
     return result
@@ -132,12 +132,32 @@ def _message(event: dict) -> str:
         status = ("全部成交" if event["filled_quantity"] >= event["requested_quantity"]
                   else "部分成交")
     lines = ["YHS QQ｜Alpaca Paper", f"{action}订单{status}",
-             f"标的：{event['ticker']}  合约：{event['contract_symbol']}",
-             f"数量：{event['requested_quantity']:g} 张；累计成交：{event['filled_quantity']:g} 张"]
+             f"标的：{event['ticker']}  合约：{event['contract_symbol']}"]
+    right = {"C": "Call（看涨期权）", "P": "Put（看跌期权）"}.get(event.get("right"))
+    if right:
+        operation = "买入开仓" if event["side"] == "buy" else "卖出平仓"
+        lines.append(f"操作：{operation} {right}")
+    order_type = {"limit": "限价单", "market": "市价单"}.get(event.get("order_type"))
+    if order_type:
+        lines.append("订单类型：" + order_type)
+    if event.get("expiration"):
+        lines.append("到期日：" + event["expiration"])
+    if "strike" in event:
+        lines.append(f"行权价：${event['strike']:g}")
+    lines.append(f"数量：本次订单 {event['requested_quantity']:g} 张；累计成交 {event['filled_quantity']:g} 张")
+    if kind == "filled" and "new_fill_quantity" in event:
+        lines.append(f"本次新增确认成交：{event['new_fill_quantity']:g} 张")
+    if "remaining_quantity" in event:
+        lines.append(f"该笔策略仓位剩余：{event['remaining_quantity']:g} 张（截至观察时间）")
     if "price" in event:
         label = "成交均价" if kind == "filled" else "限价"
         price = event["price"]
         lines.append(f"{label}：${price:.4f}/股（每张 = 100 股，约 ${price * 100:.2f}/张）")
+        if kind == "filled":
+            flow = "累计买入金额" if event["side"] == "buy" else "本单累计卖出金额"
+            lines.append(f"{flow}：${price * event['filled_quantity'] * 100:.2f}（未含费用）")
+        elif kind == "submitted":
+            lines.append(f"按限价计算的委托金额：${price * event['requested_quantity'] * 100:.2f}（未含费用，尚待成交确认）")
     identity = event.get("order_id") or event.get("client_order_id")
     if identity:
         lines.append("订单尾号：" + identity[-8:])
@@ -149,7 +169,7 @@ def _message(event: dict) -> str:
         lines.append("提交不等于成交，成交另行确认通知。")
     elif kind == "unknown":
         lines.append("提交结果待券商对账；程序保留订单意图，不盲目重复下单。")
-    lines.append("时间：" + event["timestamp"])
+    lines.append("程序观察时间：" + event["timestamp"])
     return "\n".join(lines)
 
 
