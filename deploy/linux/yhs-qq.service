@@ -1,0 +1,39 @@
+[Unit]
+Description=YHS QQ Alpaca Paper monitor
+Wants=network-online.target
+After=network-online.target
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=yhsqq
+Group=yhsqq
+WorkingDirectory=/opt/yhs-qq/app
+LoadCredential=api:/etc/yhs-qq/credentials.json
+ExecStart=/usr/bin/python3 -u -B /opt/yhs-qq/app/deploy/linux/runner.py
+Environment=PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=60s
+KillSignal=SIGTERM
+KillMode=control-group
+TimeoutStopSec=300s
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/yhs-qq
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

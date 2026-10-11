@@ -1,0 +1,35 @@
+YHS QQ 的 Codex 云端开发与离线验证任务
+
+仓库：https://github.com/shoneimal-gif/YHS-QQ
+在已发布并包含本仓库的 Codex 云端环境中执行本任务。先定位包含 main.py 的源码目录，读取 README.md、DATA_FORMATS.md、VALIDATION.md、ALPACA_PAPER_GUIDE.md、CLOUD_DEPLOY.md 和适用 AGENTS.md。缺少源码或运行条件时如实报告，不凭描述声称验证完成。
+
+目标
+沿用当前 YHS 异动期权策略和 Alpaca Paper 实现，完成代码审查、离线工程验证、必要修复和 Linux 部署文件检查。Python 3.10+，业务依赖仅标准库。当前 10 万美元为模拟策略预算，保留风险策略和 Paper 端点限制。
+
+运行边界
+使用合成数据、临时目录、已有回放、unittest.mock 或自建最小模拟响应。不要读取真实密钥、个人 runtime 账本或旧聊天，不访问真实 YHS/Alpaca/Robinhood/券商账户，不提交或撤销任何交易订单。本任务无需真实 API Key。不要安装常驻服务、启用 timer、创建无限监控进程或替用户购买服务器。部署脚本可在隔离临时目录检查；未经执行的 Linux/systemd/Windows 路径列为未验证。
+
+执行要求
+1. 记录实际 Python、操作系统、Git 代码版本和工作目录；先清楚说明当前源码与测试覆盖。
+2. 实际运行 python3 -X utf8 -m unittest discover -s tests -v。用独立临时目录运行 python3 -X utf8 main.py --replay，显式指定 --date 2026-10-09 --seed 7 --output-dir 为新的临时路径。标明合成回放不是历史业绩。
+3. 对现有覆盖缺口添加可复现的标准库离线测试，模拟时钟、网络、券商响应和进程中断；不依赖真实交易日或实时数据，不留下后台进程。
+4. 对失败先记录复现及原因，再最小修改并重新验证。不通过删除账本、关闭校验、放宽配额或风险阈值让测试通过。
+
+重点验收
+A. YHS 契约与配额：50 RPM、至少 1.2 秒请求间隔、最大并发 3，月额度预留与失败/重试计量；同日每日榜单 claim 和缓存复用，不重复领取；数据字段缺失、过期、鉴权失败及额度熔断的处理。
+B. 信号与时序：候选池筛选、节点疲劳/去重、Flow 确认、期权报价和到期/Delta/价差校验；未来或过期数据不能提前产生入场；重启只处理未来时槽，已有池和扫描状态可恢复。
+C. 预算与仓位：10 万美元策略预算、单笔 1%、单笔费用上限、最多 10 个持仓、最多 50 张合约及每日开仓上限，以当前配置和 policy 为准；待成交订单预留资金/席位，不重复占用、不造成负现金。
+D. Alpaca Paper 隔离：任何未知或实盘端点拒绝；默认预览不能写订单；只有显式 execute-paper 才能写模拟订单；本地预算与券商余额区分。
+E. 订单与账本：partial fill、撤单未知、超时、订单意图与 client_order_id、退出重试及崩溃恢复；券商确认 filled 后才计平仓；未知状态保留并阻止重复下单。
+F. 退出与对账：程序监控的止损/保本/追踪/止盈、提前收盘清仓；SIGTERM 和失联停止新开仓并恢复对账；未确认平仓不能记为已实现收益。休市返回 MARKET_CLOSED，未请求 YHS 候选池。
+G. 锁和持久化：同主机同安装账本独占，账户路径不被 output-dir 绕过；明确跨主机不互斥；Linux app/runtime 链接与配额/状态迁移，导入中断不能留下被误认作完整的账本。
+H. 云端启动文件：检查 install.sh、runner.py、configure_keys.py、service/timer、部署 manifest、权限及 LoadCredential；美东时区和 DST、正常退出不重启、异常重启次数限制；升级保留非空 runtime，默认安装不启动订单执行。
+I. 报告：JSON/CSV/账本计数一致；indicative 报价和未平仓估值标为估计；合成收益、Paper 成交、真实盈利分开表述；日志与交付物不得含密钥。
+
+交付
+1. 必要源码/测试/文档修复。
+2. CLOUD_VALIDATION_REPORT.md：中文记录环境、版本、真实命令/退出码、测试数量、失败/修复、回放输出、未验证或受阻项目。
+3. CLOUD_VALIDATION_SUMMARY.json：时间/时区、版本或源码摘要、测试统计、A-I 的 passed/failed/unverified、输出路径、real_market_api_called=false、broker_orders_submitted=false、profitability_validated=false。不得含 NaN、Infinity 或密钥。
+4. 更新 VALIDATION.md，区分既有记录与本次实际离线验证。未执行的安装、Windows 入口、盘中数据或 Paper 下单流程仍标未验证。
+
+完成后先向用户报告可核实结果和剩余事项。持续模拟交易仍按 CLOUD_DEPLOY.md 部署到用户提供的服务器，不能把云端开发验证完成描述为交易服务器已经上线。

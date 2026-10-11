@@ -1,0 +1,11 @@
+[Unit]
+Description=Start YHS QQ on weekdays at 09:25 New York time
+
+[Timer]
+OnCalendar=Mon..Fri *-*-* 09:25:00 America/New_York
+Persistent=true
+AccuracySec=30s
+Unit=yhs-qq.service
+
+[Install]
+WantedBy=timers.target

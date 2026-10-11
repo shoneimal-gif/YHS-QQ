@@ -6,6 +6,9 @@ Python 3.10+，全部业务代码、网络请求、日志和测试只使用标�
 Alpaca 模式默认只生成交易预览，添加 `--execute-paper` 才能提交模拟订单。
 交易地址固定为 Paper，无实盘模式。先读 [ALPACA_PAPER_GUIDE.md](ALPACA_PAPER_GUIDE.md)。
 
+云服务器后台运行与迁移步骤见 [CLOUD_DEPLOY.md](CLOUD_DEPLOY.md)，部署脚本位于 `deploy/`。
+Codex 云端开发与离线验证任务说明位于 [CLOUD_TASK.txt](CLOUD_TASK.txt)，可从包含此仓库的已发布云端环境开始。
+
 ## 快速运行
 
 在本目录打开 PowerShell，已有可用 Python 时运行：
@@ -196,4 +199,3 @@ OS锁限制同一模拟账本只有一个进程写入；模拟账本方法加RLo
 
 本项目实现用户定义的GEX/Flow启发式规则。正Gamma节点不是必然支撑/阻力；成交量≥OI也不能单独证明开仓。
 测试验证实现、预算及状态机一致性，没有验证策略在历史/实盘中的盈利能力。
-
