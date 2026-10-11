@@ -1,0 +1,113 @@
+{
+  "policy_version": "trial_1000_v1",
+  "prepared_on": "2026-10-10",
+  "status": "PROPOSED_PAPER_FIRST",
+  "live_execution_enabled": false,
+  "description_zh": "按1000美元制定的小额期权试验方案。该文件是策略规范，不能作为main.py的--config参数，也没有启用Robinhood自动交易。",
+  "budget": {
+    "initial_usd": 1000,
+    "order_debit_with_entry_fees_max_usd": 50,
+    "quantity_per_entry": 1,
+    "open_positions_max": 1,
+    "entries_per_et_session_max": 1,
+    "daily_loss_trigger_usd": 20,
+    "trial_loss_trigger_usd": 100,
+    "trial_equity_pause_usd": 900,
+    "borrowed_funds_allowed": false,
+    "position_increase_allowed": false,
+    "notes_zh": [
+      "单笔50美元相当于初始资金5%，仍属于有显著风险的期权试验。",
+      "日内净盈亏=当日已实现净盈亏+当前按可卖出报价估算的浮动净盈亏；达到-20美元时停止新开仓并启动退出流程。",
+      "试验权益从1000美元开始，净值小于等于900美元时暂停新开仓、退出剩余头寸并复核；触发金额不是成交保证。",
+      "下单前还应将该单全损金额计入剩余100美元试验亏损预算，预算不足时拒绝入场。",
+      "资金到账后重新读取Robinhood实际购买力、账户权益和限制，不以转账申请金额或本地虚拟余额代替。"
+    ]
+  },
+  "eligible_contracts": {
+    "candidate_tickers": ["SPY", "QQQ"],
+    "actions": ["BUY_CALL", "BUY_PUT"],
+    "standard_contract_multiplier": 100,
+    "adjusted_contracts_allowed": false,
+    "minimum_calendar_days_to_expiry": 5,
+    "maximum_calendar_days_to_expiry": 10,
+    "absolute_delta_min": 0.30,
+    "absolute_delta_max": 0.55,
+    "bid_must_be_positive": true,
+    "spread_to_mid_max": 0.05,
+    "spread_absolute_max_usd_per_share": 0.05,
+    "broker_quote_max_age_seconds": 30,
+    "notes_zh": [
+      "SPY/QQQ仅为首轮候选范围；入场必须同时满足原YHS结构、Flow、资产类型和现货价格条件。",
+      "合约须与已确认的Flow合约及GEX到期日一致；缺少真实Delta或报价时间时不入场。",
+      "预算50美元对应标准一张每股权利金上限约0.50美元，实际需再扣费用；按合法最小报价单位向下取整。",
+      "找不到兼顾预算、到期、Delta和点差的合约就空仓，不能改买深虚值或0DTE来凑额度。"
+    ]
+  },
+  "signal": {
+    "bullish": "原跳板条件成立且ASK侧Call大单确认后，才考虑买Call。",
+    "bearish": "原悬崖条件成立且ASK侧Put大单确认后，才考虑买Put。",
+    "flow_premium_min_usd": 50000,
+    "flow_lookback_minutes": 15,
+    "daily_contract_volume_gte_oi": true,
+    "fatigue_tests_max": 3,
+    "hypothesis_zh": "GEX结构、ASK成交和成交量/OI是候选信号，不证明未来方向、支撑有效或新开仓意图。"
+  },
+  "session_policy": {
+    "timezone": "America/New_York",
+    "entry_windows": [["09:45", "11:30"], ["14:30", "15:00"]],
+    "start_liquidation_et": "15:45",
+    "overnight_allowed": false,
+    "notes_zh": "提前清仓需要确认真实卖出成交；未成交订单不能记作已平仓。半日市和休市必须依据交易日历另设时段。"
+  },
+  "exits": {
+    "hard_stop_roi": -0.35,
+    "breakeven_trigger_peak_roi": 0.35,
+    "trailing_trigger_peak_roi": 0.60,
+    "trailing_drawdown_of_peak_option_value": 0.20,
+    "hard_take_profit_roi": 1.50,
+    "example_for_50_usd_entry": {
+      "planned_initial_stop_loss_usd": 17.5,
+      "at_60_percent_peak_value_usd": 80,
+      "trailing_exit_trigger_value_usd": 64,
+      "trailing_example_profit_usd_before_unmodeled_fees": 14,
+      "at_150_percent_gain_value_usd": 125
+    },
+    "notes_zh": [
+      "保本、止损和追踪阈值都是退出触发条件，不能保证成交价格。",
+      "20%回撤指期权价值从峰值回撤20%，不是盈利回撤20%或减20个百分点。",
+      "模拟用Delta/Gamma估值；真实风控必须使用实际成交成本、可卖出报价和费用，不能只靠Heatmap现货模型。",
+      "只通过卖出平仓退出，避免主动行权；到期自动行权风险必须由执行模块处理。"
+    ]
+  },
+  "execution_requirements_before_live": [
+    "使用持久化订单ID防重复下单，开仓用限价单；挂单、取消中和部分成交均占用预算与仓位名额。",
+    "提交前核对实际购买力、费用、合约乘数及账户限制，并按经纪商工具规则处理订单预览和必要审批。",
+    "以真实成交更新仓位和盈亏；每次退出核实可卖数量，避免卖出开仓。",
+    "实现经纪商接受的保护订单与失联处理、取消和成交对账，再启用自动执行。",
+    "尊重Robinhood实际限频和交易时段；YHS请求预算不代表Robinhood调用额度。"
+  ],
+  "review": {
+    "initial_observation_et_sessions": 10,
+    "trades_are_not_required_every_day": true,
+    "metrics": ["扣费用净收益", "最大权益回撤", "模型与真实期权报价偏差", "点差与成交滑点", "止损超额损失", "未成交及重复订单", "原方向正确率与Peak MFE"],
+    "notes_zh": "10个交易日只用于初步流程检查；样本不足时继续观察。模拟盈利或方向正确率不能证明实盘策略盈利，也不自动提高仓位。"
+  },
+  "implementation_status": {
+    "paper_config_file": "config.trial_1000.json",
+    "already_supported": ["1000美元虚拟初始资金", "每笔一张", "同时一仓", "每笔及在仓权利金50美元上限（含模型滑点、不含未建模费用）", "最大到期10日", "入场报价最大年龄30秒", "原两阶出场阈值"],
+    "not_automatically_enforced": ["SPY/QQQ专用候选范围", "最小到期日及Delta/点差筛选", "每日一次入场", "日亏20美元和总亏100美元熔断", "入场时间窗口及15:45提前平仓", "真实交易费用", "Robinhood下单、保护订单和成交对账"],
+    "usage_zh": [
+      "资金未转入时使用--replay；使用--live也只是YHS实时行情加本地模拟账本。",
+      "在yhs_options_system目录运行：python -X utf8 main.py --replay --config config.trial_1000.json。",
+      "output_dir使用单独trial_1000目录，避免复用旧100000美元模拟账本；额度文件沿用README中runtime/live的额度路径，其他实时配置也应共享同一额度文件。",
+      "模型入场中间价乘1.02后再乘100；中间价1.00美元时成本102美元，会被此50美元配置拒绝。",
+      "附带合成回放包含较昂贵的合约，在此预算下可能没有成交；这是预算筛选结果，不能调高额度制造收益。"
+    ]
+  },
+  "sources": [
+    "https://robinhood.com/us/en/support/articles/basic-options-strategies/",
+    "https://robinhood.com/us/en/support/articles/stop-market-order-options/",
+    "https://robinhood.com/us/en/support/articles/expiration-exercise-and-assignment/",
+    "https://www.investor.gov/introduction-investing/general-resources/news-alerts/alerts-bulletins/investor-bulletins-63"
+  ]
+}

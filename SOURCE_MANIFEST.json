@@ -1,0 +1,30 @@
+{
+  "created_at_utc": "2026-10-11T06:14:08.153245+00:00",
+  "hash_algorithm": "SHA256",
+  "contains_credentials": false,
+  "files": {
+    ".gitignore": "7c60c73c7391a333fbf203fc9e6c08ccc17e5950e7cbb5d29ea5f8f08df912e9",
+    "alpaca_client.py": "08e05a11f45c4eb1541527d66093ebb9cfc6b31d25f15a79dafc1493866a7efb",
+    "ALPACA_PAPER_GUIDE.md": "22cd93ea1290f600ebd6960bffee7fbf7726748626c26443dd597844a9f5f7a6",
+    "alpaca_policy_100k.json": "d555fffa195a267322d66b3fb8d173b906fa8f37b270d52386043756d915b6ea",
+    "alpaca_trader.py": "d884ea2c7fe64961538a62d907d8da27be48f2bb85a6afa0df6ac86b021cbb62",
+    "config.alpaca_paper_100k.json": "0654c2c2749a89941b0becc748ca74a70e252285d7348c4a998a988bd40c3676",
+    "config.example.json": "b7324bff6c54aa50e25800807bb57bc8fd86e846818bcad818c95e94efd907f4",
+    "config.py": "b8c779beffe44d20571ef846cc5274620e8baa18580b073168916d9be4874cf7",
+    "config.trial_1000.json": "20e6d7542dbbfeb06be14cf9a55ff20e6e8570ebc6597d86fe9c175871f8ad13",
+    "CONTINUATION.txt": "2049884f5a66014966cfdf3d842a106aac887756a85659c9f195cfd342342d6e",
+    "DATA_FORMATS.md": "391354201877adf0f2f8596dfe7db7fa4743e82bc22e1a2e9bd8a86362753553",
+    "detector.py": "92006b24f1a2a94cfdc90d8acbb14eda2a5b71ed2f1468586c569fde84f182c1",
+    "main.py": "beae9ec9a22b27ca9a7366151a5a7cf1f9f44981ecfc8e83bdb28defe23ed62f",
+    "mock_replay.py": "179bb6d4224978e47ae73a09252914d36a5272a48742232b4e561e4977e0a83c",
+    "paper_trader.py": "2199e3ad9c829d1e38bdb783499cf49b34a43679e833d54eb89588cc6449ea88",
+    "README.md": "9b472270084cf6da069b5d3fdf16e9a41a84cd431ac246de4d7e9b0482f93cb4",
+    "run_alpaca_paper.ps1": "0a7d208ee942349aeaf3930a5ed25b854ddc5ee11658acd506c5a74c3cc65af2",
+    "tests/test_client.py": "ac1a46273f4d637a7eea1a5a947dc7b05d75ec4ca44593cf4d57ae926308e4b3",
+    "tests/test_main.py": "e85b3f3fd4d725d335bfec881c80ed9a329904a41bc46bd32be0ff5035e81067",
+    "tests/test_system.py": "0aa62456db127293c8a2b3207f2873d15e881567b16b3100e994a5e6290a1f62",
+    "trial_policy_1000.json": "d8008f340117880656a3ac68bf41585e6249badf987e8163455a7b670cf228a8",
+    "VALIDATION.md": "2171b4365dfcef895b687f07577a55b7a5667ac07b4367f8f8d69810eca54303",
+    "yhs_client.py": "89937800e11acf9db964769be848cf888561b01913bbbfd490bc2a2f68fbefad"
+  }
+}

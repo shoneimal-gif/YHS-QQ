@@ -1,0 +1,15 @@
+runtime/
+private_migration/
+example_replay/
+example_replay_verified/
+ALPACA_CONNECTION_CHECK.json
+example_replay_verified_run.log
+__pycache__/
+*.pyc
+*.log
+*.lock
+*.tmp
+.env
+.env.*
+auth.json
+credentials.json

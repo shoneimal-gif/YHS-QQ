@@ -1,0 +1,195 @@
+# Nightwatch
+
+- [什么是 Nightwatch](https://docs.yehangshe.com/introduction.md): AI 赋能的一体式期权交易终端，为活跃交易者打造
+- [快速上手](https://docs.yehangshe.com/quickstart.md): 五步完成从登录到实时看盘的全流程
+- [做市商对冲机制——GEX 背后的底层逻辑](https://docs.yehangshe.com/learn/dealer-positioning.md): 从做市商的角色出发，理解为什么他们的对冲行为会在股票价格图上制造真实的支撑、阻力和加速区域
+- [面向 GEX 用户的 Greeks 入门](https://docs.yehangshe.com/learn/greeks-for-gex.md): 不是教科书定义，而是每个 Greek 如何影响你在 Nightwatch 热力图和节点上看到的东西
+- [Gamma 环境分类：区间日、趋势日、剧烈震荡日](https://docs.yehangshe.com/learn/gamma-regimes.md): 每天开盘后快速判断"今天是什么性质的日子"，选择正确的交易策略
+- [节点生命周期：从诞生到衰减](https://docs.yehangshe.com/learn/node-lifecycle.md): 理解 GEX 节点的四个阶段——新鲜、已测试、已消耗、衰减——以及如何据此优化入场时机
+- [什么是 GEX（Gamma Exposure）](https://docs.yehangshe.com/concepts/what-is-gex.md): 理解 GEX 的本质含义、正负区别，以及如何在实际交易中应用
+- [关键节点：King / Gatekeeper / Wall / Active / Gamma Flip](https://docs.yehangshe.com/concepts/key-nodes.md): 平台所有关键节点的含义、视觉标记、读法和交易应用
+- [为什么 Heatmap 和 Dealer Chart 上没有 Call Wall / Put Wall / Gamma Flip](https://docs.yehangshe.com/concepts/dealer-vs-traditional-gex.md): 传统 GEX 的三个经典概念在做市商定位类视图中对应到哪里——两类视图观察的对象不同，用的是两套词汇
+- [到期分组：0DTE / 1DTE / Weekly](https://docs.yehangshe.com/concepts/expiry-groups.md): 三个到期分组的特点、适用场景和专属指标说明
+- [颜色系统：方向、强度与标记](https://docs.yehangshe.com/concepts/color-system.md): 理解平台中所有颜色的含义——柱状图色阶、行权价标记颜色、边框指示器，避免常见误读
+- [Heatmap 面板概览](https://docs.yehangshe.com/heatmap/overview.md): 一张图看清做市商在全部行权价和到期日上的力量分布
+- [矩阵与色阶读法](https://docs.yehangshe.com/heatmap/reading-the-matrix.md): 从零读懂 Heatmap 的行、列、颜色和数值——五分钟学会看图
+- [结构要素：King、地板、天花板与空气口袋](https://docs.yehangshe.com/heatmap/structure.md): 把散落的格子组合成一张结构地图——六个核心结构要素的识别和含义
+- [多到期解读：近端、中段与远端](https://docs.yehangshe.com/heatmap/multi-expiry.md): 为什么同一个行权价在不同到期日上意义不同——横向读图的方法
+- [结构演化：滚动、生长与衰减](https://docs.yehangshe.com/heatmap/dynamics.md): Heatmap 不是静态地图——学会读结构随时间的变化，比读任何单一快照都重要
+- [VEX 视图：波动率维度的地形图](https://docs.yehangshe.com/heatmap/vex.md): 在同一张 Heatmap 上切换到 VEX（Vanna Exposure），看 IV 每动一步，做市商会在哪些价位被迫买卖
+- [堆叠形态：悬崖、跳板与变脸](https://docs.yehangshe.com/heatmap/patterns-stacked.md): 正负节点上下堆叠时会发生什么——三种最值得记住的结构组合
+- [盘整与混沌形态：减速带、震荡结构与无序结构](https://docs.yehangshe.com/heatmap/patterns-clusters.md): 节点密集扎堆或四散混乱时怎么读——包括最重要的"不交易形态"
+- [GEX 与 VEX 对齐：两股力量同向还是相抵](https://docs.yehangshe.com/heatmap/gex-vex-alignment.md): 价格与 IV 同时变化时，Gamma 对冲流和 Vanna 对冲流是互相强化还是互相抵消，取决于三个变量而不是两个
+- [执行框架：从结构到决策](https://docs.yehangshe.com/heatmap/execution.md): 图表优先、在极端行动、等待反应——把 Heatmap 读图能力转化为交易纪律
+- [实时工作流：从开盘到收盘](https://docs.yehangshe.com/heatmap/workflow.md): 把读图、结构、形态、执行串成一套可重复的日常流程
+- [常见误读与边界](https://docs.yehangshe.com/heatmap/misreadings.md): 十个最容易犯的读图错误，以及这个工具明确做不到的事
+- [Dealer GEX 图表与 PULSE](https://docs.yehangshe.com/dashboard/dealer-chart.md): Dealer GEX K 线图表与 PULSE 标记的完整使用说明（测试功能）
+- [异动期权流（Flow 面板）](https://docs.yehangshe.com/dashboard/flow.md): 实时异常期权成交流的查看方法、字段解读与筛选技巧
+- [适合谁使用 Nightwatch](https://docs.yehangshe.com/intended-audience.md): 明确前置条件，帮你判断这个工具是否适合你的交易阶段
+- [交易方法论：如何把 Nightwatch 用进你的工作流](https://docs.yehangshe.com/trading-framework.md): 一套可执行的开盘前 + 日内操作流程，帮你把平台信息转化为具体决策
+- [最佳实践：怎么用，不要怎么用](https://docs.yehangshe.com/best-practices.md): Do's & Don'ts，帮你从一开始就避免最常见的误用方式
+- [局限性与常见误区](https://docs.yehangshe.com/limitations-and-pitfalls.md): 理解 Nightwatch 做不到什么，和理解它能做什么同样重要
+- [Volatility 面板总览](https://docs.yehangshe.com/volatility/overview.md): 六大 KPI 速览波动率全景，八个子面板分工说明
+- [IV 期限结构（IV Term Structure）](https://docs.yehangshe.com/volatility/iv-term-structure.md): 读懂 Contango/Backwardation 形态，用期限结构判断市场事件定价状态
+- [IV Skew（25Δ 偏度）](https://docs.yehangshe.com/volatility/iv-skew.md): 用 Put-Call IV 偏度衡量市场对下行尾部风险的定价，辅助判断保护成本
+- [IV Rank](https://docs.yehangshe.com/volatility/iv-rank.md): 用 52 周历史百分位判断期权定价高低，找到卖权和买权的最佳时机
+- [RV vs IV（已实现波动率 vs 隐含波动率）](https://docs.yehangshe.com/volatility/rv-vs-iv.md): 面板中各指标线的含义、IV Premium 的读法，以及期权买卖时机判断
+- [0DTE Tide（市场潮汐）](https://docs.yehangshe.com/volatility/tide.md): 用 0DTE 资金净流向判断日内方向偏好，与 GEX 结构配合使用
+- [Replay Lab 概览](https://docs.yehangshe.com/replay-lab/overview.md): 0DTE 期权日内复盘工作台 —— 在历史 K 线上回放任意一天，建仓策略，观察 P&L 演变
+- [日期与时间轴](https://docs.yehangshe.com/replay-lab/timeline.md): 时间滑块、播放控件、日期选择器和键盘快捷键的完整说明
+- [策略建仓](https://docs.yehangshe.com/replay-lab/strategy-builder.md): 8 个内置模板（单腿、价差、铁鹰、铁蝶）+ 模板参数 + 用期权链辅助选 strike
+- [Result 面板](https://docs.yehangshe.com/replay-lab/result-panel.md): 当前盈亏、风险条三层结构、关键指标网格、到期结构图、持仓腿明细的完整解读
+- [期权链快照](https://docs.yehangshe.com/replay-lab/chain-snapshot.md): C 键打开当前时刻的完整期权链 NBBO + Greeks 快照
+- [Discord 功能](https://docs.yehangshe.com/discord/overview.md): Discord 在 Nightwatch 中的四个角色：登录、权益履约、实时 Flow Alert、AI 研报
+- [0DTE Flow Alert](https://docs.yehangshe.com/discord/flow-alert.md): SPY/SPX 0DTE ask 侧大单实时推送到 Discord，盘中不盯屏也能跟踪大资金动向
+- [Nightwatch Research 研报](https://docs.yehangshe.com/discord/research.md): 在 Discord 频道 @bot + 股票代码，获取 AI 生成的个股期权研报 PDF
+- [如何解读研报](https://docs.yehangshe.com/discord/research-reading.md): Nightwatch Research PDF 的结构说明和各部分解读方法
+- [常见问题](https://docs.yehangshe.com/faq.md): 订阅、数据、连接等常见问题解答
+- [产品路线图](https://docs.yehangshe.com/roadmap.md): Nightwatch 正在从 Gamma 热力图工具演进为 AI 赋能的一站式期权交易终端
+- [GEX Dashboard 概览](https://docs.yehangshe.com/dashboard/overview.md): Dashboard 的整体定位、顶部导航栏说明和日常使用工作流
+- [结构面板](https://docs.yehangshe.com/dashboard/structure-panel.md): 结构面板所有统计卡片的读法、特殊标记含义和实战解读方法
+- [历史热力图](https://docs.yehangshe.com/dashboard/heatmap-panel.md): 热力图的颜色读法、格子含义，以及三种实战使用方式
+- [Data API 介绍](https://docs.yehangshe.com/api/introduction.md): Nightwatch 数据的程序化接口——REST 与 MCP 双通道，包含于订阅
+- [快速开始](https://docs.yehangshe.com/api/quickstart.md): 五分钟：生成 API Key，跑通第一个请求
+- [鉴权与 API Key](https://docs.yehangshe.com/api/authentication.md): Key 的生成、使用、撤销与安全实践
+- [配额与限流](https://docs.yehangshe.com/api/quota-and-rate-limits.md): 月配额、速率限制与零消耗规则
+- [数据新鲜度](https://docs.yehangshe.com/api/data-freshness.md): 数据准备、旧值兜底、404 与 503 的分工——Data API 的数据行为契约
+- [错误处理](https://docs.yehangshe.com/errors.md): Data API 错误信封与全部错误码——含义与处理方式
+- [通用约定](https://docs.yehangshe.com/api/conventions.md): 响应信封、分页、时间语义与命名规则
+- [Dealer GEX API](https://docs.yehangshe.com/api/dealer-gex.md): 读取 0DTE Dealer GEX 的 5 分钟固定采样快照与历史
+- [Dealer Heatmap API](https://docs.yehangshe.com/api/dealer-heatmap-snapshot.md): 读取 Dealer Heatmap 的 5 分钟固定采样 Top 节点快照与历史
+- [数据目录总览](https://docs.yehangshe.com/api/catalog.md): 13 个数据领域的地图与覆盖面模型
+- [flow — 期权资金流](https://docs.yehangshe.com/api/domains/flow.md): 查询期权成交流、标的榜单、合约链、分钟桶与合约历史
+- [options — 期权结构](https://docs.yehangshe.com/api/domains/options.md): 期权链快照、整链历史 Greeks、OI 与成交量分布、单合约行情
+- [stocks — 个股与指数](https://docs.yehangshe.com/api/domains/stocks.md): 股票与指数行情、公司信息、分红拆股、技术指标与 lit 成交
+- [volatility — 波动率](https://docs.yehangshe.com/api/domains/volatility.md): IV rank、期限结构、已实现波动、偏斜与波动率异常
+- [congress — 国会交易披露](https://docs.yehangshe.com/api/domains/congress.md): 美国国会议员的证券交易披露流
+- [fundamentals — 财报与基本面](https://docs.yehangshe.com/api/domains/fundamentals.md): 财报三表、盈利历史与预期、盘前盘后财报日历
+- [market — 市场面](https://docs.yehangshe.com/api/domains/market.md): 涨跌榜、期权成交量 Top 150、OI 变动榜与三大日历
+- [macro — 宏观](https://docs.yehangshe.com/api/domains/macro.md): 经济指标、商品与汇率
+- [insider — 内部人交易](https://docs.yehangshe.com/api/domains/insider.md): 上市公司高管与董事的交易披露
+- [institutions — 机构持仓](https://docs.yehangshe.com/api/domains/institutions.md): 机构 13F 持仓、变动与按标的的机构持股结构
+- [shorts — 做空数据](https://docs.yehangshe.com/api/domains/shorts.md): Short interest、FTD、做空量与比率、做空筛选器
+- [darkpool — 暗池](https://docs.yehangshe.com/api/domains/darkpool.md): 暗池成交流与价格档位分布
+- [MCP 概览](https://docs.yehangshe.com/mcp/overview.md): 让 Claude、Cursor 等 AI 工具直接使用 Nightwatch 数据
+- [MCP 接入配置](https://docs.yehangshe.com/mcp/setup.md): 在 Claude Code、Cursor 与其他 MCP 客户端中接入
+- [MCP 使用模式](https://docs.yehangshe.com/mcp/patterns.md): 让 agent 用得又快又省的实践与常见坑
+- [Changelog](https://docs.yehangshe.com/api/changelog.md): Data API 的变更记录与兼容性政策
+- [Standard GEX chain-level aggregate history (keyset pagination, newest first)](https://docs.yehangshe.com/api-reference/standard-gex-chain-level-aggregate-history-keyset-pagination-newest-first.md)
+- [Dealer GEX (0DTE) latest read-model snapshot projection](https://docs.yehangshe.com/api-reference/dealer-gex-0dte-latest-read-model-snapshot-projection.md)
+- [Dealer GEX (0DTE) 5-minute public history (three NYSE sessions, newest first)](https://docs.yehangshe.com/api-reference/dealer-gex-0dte-5-minute-public-history-three-nyse-sessions-newest-first.md)
+- [Dealer Heatmap latest completed 5-minute signed Top-node snapshot](https://docs.yehangshe.com/api-reference/dealer-heatmap-latest-completed-5-minute-signed-top-node-snapshot.md)
+- [Dealer Heatmap expiration Top-node 5-minute history (three NYSE sessions, newest first)](https://docs.yehangshe.com/api-reference/dealer-heatmap-expiration-top-node-5-minute-history-three-nyse-sessions-newest-first.md)
+- [Filtered Flow aggregate history; defaults to order aggregates with premium_usd at least 10000 and limit 25. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/filtered-flow-aggregate-history;-defaults-to-order-aggregates-with-premium_usd-at-least-10000-and-limit-25-et-dates-use-yyyy-mm-dd.md)
+- [Resolve one OCC contract symbol into its normalized contract identity and current activity. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/resolve-one-occ-contract-symbol-into-its-normalized-contract-identity-and-current-activity-et-dates-use-yyyy-mm-dd.md)
+- [Option-contract directory for one required expiration, paged up to 200 contracts. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/option-contract-directory-for-one-required-expiration-paged-up-to-200-contracts-et-dates-use-yyyy-mm-dd.md)
+- [Ticker option sentiment and five ranked contract boards. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/ticker-option-sentiment-and-five-ranked-contract-boards-et-dates-use-yyyy-mm-dd.md)
+- [Ticker Flow summary and ranked contracts over one or seven trading sessions. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/ticker-flow-summary-and-ranked-contracts-over-one-or-seven-trading-sessions-et-dates-use-yyyy-mm-dd.md)
+- [Ticker Flow contract-day chain, paged at up to 100 rows. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/ticker-flow-contract-day-chain-paged-at-up-to-100-rows-et-dates-use-yyyy-mm-dd.md)
+- [Intraday contract or net-premium bars for one option contract, paged at up to 100 rows. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/intraday-contract-or-net-premium-bars-for-one-option-contract-paged-at-up-to-100-rows-et-dates-use-yyyy-mm-dd.md)
+- [Flow aggregates for one contract in an exact five-minute bucket, paged at up to 25 rows; truncated reports the source 200-row ceiling. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/flow-aggregates-for-one-contract-in-an-exact-five-minute-bucket-paged-at-up-to-25-rows;-truncated-reports-the-source-200-row-ceiling-et-dates-use-yyyy-mm-dd.md)
+- [Up to 30 trading sessions of contract-day Flow history. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/up-to-30-trading-sessions-of-contract-day-flow-history-et-dates-use-yyyy-mm-dd.md)
+- [Intraday call and put premium bars for a product ticker. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/intraday-call-and-put-premium-bars-for-a-product-ticker-et-dates-use-yyyy-mm-dd.md)
+- [Bounded ticker bucket view: both cohort summaries, one cohort top-contract page, or one cohort trade page; truncated preserves the selected source cohort ceiling. ET dates use YYYY-MM-DD.](https://docs.yehangshe.com/api-reference/bounded-ticker-bucket-view:-both-cohort-summaries-one-cohort-top-contract-page-or-one-cohort-trade-page;-truncated-preserves-the-selected-source-cohort-ceiling-et-dates-use-yyyy-mm-dd.md)
+- [Congress disclosures filed past the statutory deadline (daily disclosure cadence)](https://docs.yehangshe.com/api-reference/congress-disclosures-filed-past-the-statutory-deadline-daily-disclosure-cadence.md)
+- [Roster of congress members with disclosed trades (daily disclosure cadence)](https://docs.yehangshe.com/api-reference/roster-of-congress-members-with-disclosed-trades-daily-disclosure-cadence.md)
+- [Latest disclosed congress member trades (daily disclosure cadence)](https://docs.yehangshe.com/api-reference/latest-disclosed-congress-member-trades-daily-disclosure-cadence.md)
+- [Disclosed trades for a single congress member (on-demand materialization)](https://docs.yehangshe.com/api-reference/disclosed-trades-for-a-single-congress-member-on-demand-materialization.md)
+- [Most recent dark pool prints for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/most-recent-dark-pool-prints-for-one-ticker-on-demand-materialization.md)
+- [Recent dark pool prints across the whole market](https://docs.yehangshe.com/api-reference/recent-dark-pool-prints-across-the-whole-market.md)
+- [Off-exchange vs lit share volume by price level for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/off-exchange-vs-lit-share-volume-by-price-level-for-one-ticker-on-demand-materialization.md)
+- [Quarterly and annual balance sheets for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/quarterly-and-annual-balance-sheets-for-a-single-ticker-on-demand-materialization.md)
+- [Quarterly and annual cash flow statements for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/quarterly-and-annual-cash-flow-statements-for-a-single-ticker-on-demand-materialization.md)
+- [Market-wide after-hours earnings calendar for the latest reporting session](https://docs.yehangshe.com/api-reference/market-wide-after-hours-earnings-calendar-for-the-latest-reporting-session.md)
+- [Forward analyst revenue and EPS estimates for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/forward-analyst-revenue-and-eps-estimates-for-a-single-ticker-on-demand-materialization.md)
+- [Reported EPS history for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/reported-eps-history-for-a-single-ticker-on-demand-materialization.md)
+- [Market-wide premarket earnings calendar for the latest reporting session](https://docs.yehangshe.com/api-reference/market-wide-premarket-earnings-calendar-for-the-latest-reporting-session.md)
+- [All four financial statement blocks for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/all-four-financial-statement-blocks-for-a-single-ticker-on-demand-materialization.md)
+- [SEC filing-level fundamentals and XBRL revenue breakdown for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/sec-filing-level-fundamentals-and-xbrl-revenue-breakdown-for-a-single-ticker-on-demand-materialization.md)
+- [Quarterly and annual income statements for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/quarterly-and-annual-income-statements-for-a-single-ticker-on-demand-materialization.md)
+- [Earnings-event price behaviour and straddle backtest for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/earnings-event-price-behaviour-and-straddle-backtest-for-a-single-ticker-on-demand-materialization.md)
+- [Per-disclosure-day insider buy/sell counts and notionals for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/per-disclosure-day-insider-buysell-counts-and-notionals-for-a-single-ticker-on-demand-materialization.md)
+- [Insider transactions for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/insider-transactions-for-a-single-ticker-on-demand-materialization.md)
+- [Market-wide per-disclosure-day insider buy/sell counts and notionals](https://docs.yehangshe.com/api-reference/market-wide-per-disclosure-day-insider-buysell-counts-and-notionals.md)
+- [Daily aggregated insider flow for one sector (on-demand materialization)](https://docs.yehangshe.com/api-reference/daily-aggregated-insider-flow-for-one-sector-on-demand-materialization.md)
+- [Daily aggregated insider flow for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/daily-aggregated-insider-flow-for-a-single-ticker-on-demand-materialization.md)
+- [Market-wide latest insider (Form 4) transactions](https://docs.yehangshe.com/api-reference/market-wide-latest-insider-form-4-transactions.md)
+- [Position changes reported by one institution in its latest 13F (on-demand materialization)](https://docs.yehangshe.com/api-reference/position-changes-reported-by-one-institution-in-its-latest-13f-on-demand-materialization.md)
+- [Latest reported 13F holdings for one institution (on-demand materialization)](https://docs.yehangshe.com/api-reference/latest-reported-13f-holdings-for-one-institution-on-demand-materialization.md)
+- [Directory of 13F filing institutions ranked by portfolio value](https://docs.yehangshe.com/api-reference/directory-of-13f-filing-institutions-ranked-by-portfolio-value.md)
+- [Most recent institutional filings across the market](https://docs.yehangshe.com/api-reference/most-recent-institutional-filings-across-the-market.md)
+- [Institutional holders of one ticker from 13F filings (on-demand materialization)](https://docs.yehangshe.com/api-reference/institutional-holders-of-one-ticker-from-13f-filings-on-demand-materialization.md)
+- [Sector allocation of one institution across recent 13F report periods (on-demand materialization)](https://docs.yehangshe.com/api-reference/sector-allocation-of-one-institution-across-recent-13f-report-periods-on-demand-materialization.md)
+- [Whole-window return statistics across a ticker set (on-demand materialization)](https://docs.yehangshe.com/api-reference/whole-window-return-statistics-across-a-ticker-set-on-demand-materialization.md)
+- [Commodity price / index time series (on-demand materialization)](https://docs.yehangshe.com/api-reference/commodity-price-index-time-series-on-demand-materialization.md)
+- [US macro indicator time series (on-demand materialization)](https://docs.yehangshe.com/api-reference/us-macro-indicator-time-series-on-demand-materialization.md)
+- [Daily / weekly / monthly FX bars for a currency pair (on-demand materialization)](https://docs.yehangshe.com/api-reference/daily-weekly-monthly-fx-bars-for-a-currency-pair-on-demand-materialization.md)
+- [Intraday FX bars for a currency pair (on-demand materialization)](https://docs.yehangshe.com/api-reference/intraday-fx-bars-for-a-currency-pair-on-demand-materialization.md)
+- [Current FX spot rate for a currency pair (on-demand materialization)](https://docs.yehangshe.com/api-reference/current-fx-spot-rate-for-a-currency-pair-on-demand-materialization.md)
+- [Pairwise return correlations across a ticker set (on-demand materialization)](https://docs.yehangshe.com/api-reference/pairwise-return-correlations-across-a-ticker-set-on-demand-materialization.md)
+- [Upcoming US economic calendar (forward-looking listing)](https://docs.yehangshe.com/api-reference/upcoming-us-economic-calendar-forward-looking-listing.md)
+- [Upcoming FDA / clinical catalyst calendar (forward-looking listing)](https://docs.yehangshe.com/api-reference/upcoming-fda-clinical-catalyst-calendar-forward-looking-listing.md)
+- [Upcoming US IPO calendar (forward-looking listing)](https://docs.yehangshe.com/api-reference/upcoming-us-ipo-calendar-forward-looking-listing.md)
+- [Market movers snapshot (most active / top gainers / top losers)](https://docs.yehangshe.com/api-reference/market-movers-snapshot-most-active-top-gainers-top-losers.md)
+- [Market-wide top open-interest changes across all optionable underlyings](https://docs.yehangshe.com/api-reference/market-wide-top-open-interest-changes-across-all-optionable-underlyings.md)
+- [Today option-volume Top 150 with open-interest changes](https://docs.yehangshe.com/api-reference/today-option-volume-top-150-with-open-interest-changes.md)
+- [Market-wide total options volume and premium per trading day](https://docs.yehangshe.com/api-reference/market-wide-total-options-volume-and-premium-per-trading-day.md)
+- [ATM option chain pair for one ticker and one expiry (on-demand materialization)](https://docs.yehangshe.com/api-reference/atm-option-chain-pair-for-one-ticker-and-one-expiry-on-demand-materialization.md)
+- [Historical chain Greeks + IV + daily OI for one ticker + expiration + right (on-demand materialization)](https://docs.yehangshe.com/api-reference/historical-chain-greeks-+-iv-+-daily-oi-for-one-ticker-+-expiration-+-right-on-demand-materialization.md)
+- [Historical chain NBBO series for one ticker + expiration + right (on-demand materialization)](https://docs.yehangshe.com/api-reference/historical-chain-nbbo-series-for-one-ticker-+-expiration-+-right-on-demand-materialization.md)
+- [Option chain snapshot for one ticker + expiration (on-demand materialization)](https://docs.yehangshe.com/api-reference/option-chain-snapshot-for-one-ticker-+-expiration-on-demand-materialization.md)
+- [Daily EOD series for a single option contract (on-demand materialization)](https://docs.yehangshe.com/api-reference/daily-eod-series-for-a-single-option-contract-on-demand-materialization.md)
+- [Intraday Greeks series for a single option contract (on-demand materialization)](https://docs.yehangshe.com/api-reference/intraday-greeks-series-for-a-single-option-contract-on-demand-materialization.md)
+- [Intraday 1-minute bars for a single option contract (on-demand materialization)](https://docs.yehangshe.com/api-reference/intraday-1-minute-bars-for-a-single-option-contract-on-demand-materialization.md)
+- [Latest-day volume profile for a single option contract (on-demand materialization)](https://docs.yehangshe.com/api-reference/latest-day-volume-profile-for-a-single-option-contract-on-demand-materialization.md)
+- [Per-expiry chains/open-interest/volume breakdown for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/per-expiry-chainsopen-interestvolume-breakdown-for-one-ticker-on-demand-materialization.md)
+- [Max pain per expiry for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/max-pain-per-expiry-for-one-ticker-on-demand-materialization.md)
+- [Per-contract open-interest change for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/per-contract-open-interest-change-for-one-ticker-on-demand-materialization.md)
+- [Open interest per expiry for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/open-interest-per-expiry-for-one-ticker-on-demand-materialization.md)
+- [Open interest per strike for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/open-interest-per-strike-for-one-ticker-on-demand-materialization.md)
+- [Full market list of optionable tickers](https://docs.yehangshe.com/api-reference/full-market-list-of-optionable-tickers.md)
+- [Latest-day options volume aggregate for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/latest-day-options-volume-aggregate-for-one-ticker-on-demand-materialization.md)
+- [Option volume distribution by underlying price level for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/option-volume-distribution-by-underlying-price-level-for-one-ticker-on-demand-materialization.md)
+- [Volume and open interest per expiry for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/volume-and-open-interest-per-expiry-for-one-ticker-on-demand-materialization.md)
+- [Securities-lending desk fee/rebate and availability observations for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/securities-lending-desk-feerebate-and-availability-observations-for-one-ticker-on-demand-materialization.md)
+- [SEC fails-to-deliver settlement history for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/sec-fails-to-deliver-settlement-history-for-one-ticker-on-demand-materialization.md)
+- [FINRA bi-weekly short interest and float history for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/finra-bi-weekly-short-interest-and-float-history-for-one-ticker-on-demand-materialization.md)
+- [Market-wide short interest screener for the latest FINRA disclosure period](https://docs.yehangshe.com/api-reference/market-wide-short-interest-screener-for-the-latest-finra-disclosure-period.md)
+- [FINRA daily short volume and ratio series for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/finra-daily-short-volume-and-ratio-series-for-one-ticker-on-demand-materialization.md)
+- [FINRA daily short volume by reporting venue for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/finra-daily-short-volume-by-reporting-venue-for-one-ticker-on-demand-materialization.md)
+- [Company fundamentals and reference profile (on-demand materialization)](https://docs.yehangshe.com/api-reference/company-fundamentals-and-reference-profile-on-demand-materialization.md)
+- [Dividend history for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/dividend-history-for-one-ticker-on-demand-materialization.md)
+- [Reference metadata for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/reference-metadata-for-one-ticker-on-demand-materialization.md)
+- [Full active US listing directory (canonical active universe)](https://docs.yehangshe.com/api-reference/full-active-us-listing-directory-canonical-active-universe.md)
+- [Recent lit-exchange prints for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/recent-lit-exchange-prints-for-one-ticker-on-demand-materialization.md)
+- [Most recent market-wide lit-exchange stock prints](https://docs.yehangshe.com/api-reference/most-recent-market-wide-lit-exchange-stock-prints.md)
+- [Latest session OHLC for a cash index (on-demand materialization)](https://docs.yehangshe.com/api-reference/latest-session-ohlc-for-a-cash-index-on-demand-materialization.md)
+- [OHLC candles for one ticker at a chosen candle size (on-demand materialization)](https://docs.yehangshe.com/api-reference/ohlc-candles-for-one-ticker-at-a-chosen-candle-size-on-demand-materialization.md)
+- [Latest NBBO quote for a single stock ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/latest-nbbo-quote-for-a-single-stock-ticker-on-demand-materialization.md)
+- [Tickers in a given sector (on-demand materialization)](https://docs.yehangshe.com/api-reference/tickers-in-a-given-sector-on-demand-materialization.md)
+- [Stock split history for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/stock-split-history-for-one-ticker-on-demand-materialization.md)
+- [Latest stock state for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/latest-stock-state-for-one-ticker-on-demand-materialization.md)
+- [Technical indicator time series for one ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/technical-indicator-time-series-for-one-ticker-on-demand-materialization.md)
+- [Ticker-to-exchange directory (raw vendor list, includes delisted symbols)](https://docs.yehangshe.com/api-reference/ticker-to-exchange-directory-raw-vendor-list-includes-delisted-symbols.md)
+- [Market-wide volatility anomaly leaderboard (short_vol + long_vol merged)](https://docs.yehangshe.com/api-reference/market-wide-volatility-anomaly-leaderboard-short_vol-+-long_vol-merged.md)
+- [Volatility anomaly score for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/volatility-anomaly-score-for-a-single-ticker-on-demand-materialization.md)
+- [Market-wide volatility character leaderboard](https://docs.yehangshe.com/api-reference/market-wide-volatility-character-leaderboard.md)
+- [Volatility character metrics for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/volatility-character-metrics-for-a-single-ticker-on-demand-materialization.md)
+- [Interpolated implied volatility term nodes for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/interpolated-implied-volatility-term-nodes-for-a-single-ticker-on-demand-materialization.md)
+- [One-year IV rank (0-100 scale) for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/one-year-iv-rank-0-100-scale-for-a-single-ticker-on-demand-materialization.md)
+- [Daily realized vs implied volatility series for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/daily-realized-vs-implied-volatility-series-for-a-single-ticker-on-demand-materialization.md)
+- [Daily 25-delta risk reversal skew series for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/daily-25-delta-risk-reversal-skew-series-for-a-single-ticker-on-demand-materialization.md)
+- [Volatility stats snapshot for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/volatility-stats-snapshot-for-a-single-ticker-on-demand-materialization.md)
+- [Implied volatility term structure for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/implied-volatility-term-structure-for-a-single-ticker-on-demand-materialization.md)
+- [Daily variance risk premium series for a single ticker (on-demand materialization)](https://docs.yehangshe.com/api-reference/daily-variance-risk-premium-series-for-a-single-ticker-on-demand-materialization.md)
+- [服务健康检查（无鉴权）](https://docs.yehangshe.com/api-reference/服务健康检查（无鉴权）.md)
+- [OpenAPI 3.1 spec（无鉴权，weight-0）](https://docs.yehangshe.com/api-reference/openapi-31-spec（无鉴权，weight-0）.md)
+- [当前 key 的 user / quota / capabilities 自描述](https://docs.yehangshe.com/api-reference/当前-key-的-user-quota-capabilities-自描述.md)
+
+## OpenAPI Specs
+
+- [openapi](/api-reference/openapi.json)
+- [openapi](https://api.yehangshe.com/v1/openapi.json)
+
+
+This documentation is built and hosted on [Mintlify](https://mintlify.com), a developer documentation platform.
