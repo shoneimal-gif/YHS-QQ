@@ -15,10 +15,13 @@ https://docs.alpaca.markets/us/reference/optionsnapshots
 from __future__ import annotations
 
 import json
+import contextlib
 import logging
 import math
 import os
 import re
+import socket
+import ssl
 import threading
 import time
 import uuid
@@ -39,9 +42,37 @@ _ENV_KEYS = frozenset(("ALPACA_API_KEY", "ALPACA_SECRET_KEY"))
 
 
 class AlpacaError(RuntimeError):
-    def __init__(self, message: str, status: int | None = None, code: str = ""):
+    def __init__(self, message: str, status: int | None = None, code: str = "", *,
+                 category: str = "validation", recoverable: bool = False):
         super().__init__(message)
         self.status, self.code = status, code
+        # Only allow fixed, locally generated categories in health/alert metadata.
+        self.category = category if category in {
+            "validation", "client_closed", "dns", "tls", "tls_verification", "timeout",
+            "connection", "network_io", "response_read", "response_schema", "authentication",
+            "permission", "rate_limit", "server", "http_timeout", "http_rejected",
+            "clock_stale", "quote_invalid", "quote_unavailable",
+            "ledger_integrity", "shared_account_pending",
+        } else "validation"
+        self.recoverable = bool(recoverable)
+
+
+def network_error_category(exc: BaseException) -> tuple[str, bool]:
+    """Classify by exception type only; never expose URL, headers or exception text."""
+    reason = exc.reason if isinstance(exc, error.URLError) else exc
+    if isinstance(reason, (ssl.SSLCertVerificationError, ssl.CertificateError)):
+        return "tls_verification", False
+    if isinstance(reason, ssl.SSLError):
+        return "tls", True
+    if isinstance(reason, socket.gaierror):
+        return "dns", True
+    if isinstance(reason, (TimeoutError, socket.timeout)):
+        return "timeout", True
+    if isinstance(reason, HTTPException):
+        return "response_read", True
+    if isinstance(reason, ConnectionError) or isinstance(exc, error.URLError):
+        return "connection", True
+    return "network_io", True
 
 
 class SubmissionNotSent(AlpacaError):
@@ -52,8 +83,9 @@ class SubmissionUnknown(AlpacaError):
     """写请求可能已受理；只能先查询，不能盲目重新下单。"""
 
     def __init__(self, message: str, *, client_order_id: str = "", operation: str = "",
-                 order_id: str = "", status: int | None = None):
-        super().__init__(message, status)
+                 order_id: str = "", status: int | None = None,
+                 category: str = "response_schema", recoverable: bool = True):
+        super().__init__(message, status, category=category, recoverable=recoverable)
         self.client_order_id = client_order_id
         self.operation, self.order_id = operation, order_id
 
@@ -245,7 +277,7 @@ class AlpacaPaperClient:
 
     def _check_cancel(self) -> None:
         if self._cancel.is_set():
-            raise AlpacaError("Alpaca Paper 客户端已关闭；不再发送请求")
+            raise AlpacaError("Alpaca Paper 客户端已关闭；不再发送请求", category="client_closed")
 
     def _sleep(self, seconds: float) -> None:
         remaining = max(0.0, seconds)
@@ -401,13 +433,21 @@ class AlpacaPaperClient:
                 if len(body)>_MAX_BODY_BYTES:
                     if write and (200 <= status < 300 or status==408 or 500 <= status <= 599):
                         raise SubmissionUnknown("Paper 写请求响应过大，不能确认订单状态；请先对账",client_order_id=client_order_id,operation=method,order_id=order_id,status=status)
-                    raise AlpacaError("Alpaca 响应超过安全上限，请缩小查询范围",status)
-            except (error.URLError,TimeoutError,ConnectionError,OSError,HTTPException):
+                    raise AlpacaError("Alpaca 响应超过安全上限，请缩小查询范围",status,
+                                      category="response_schema", recoverable=True)
+            except (error.URLError,TimeoutError,ConnectionError,OSError,HTTPException) as exc:
+                category, recoverable = network_error_category(exc)
                 if write:
-                    raise SubmissionUnknown("Paper 写请求连接中断或超时，结果未知；禁止直接重复提交，请先查询订单",client_order_id=client_order_id,operation=method,order_id=order_id,status=status) from None
+                    raise SubmissionUnknown("Paper 写请求连接中断或超时，结果未知；禁止直接重复提交，请先查询订单",client_order_id=client_order_id,operation=method,order_id=order_id,status=status,
+                                            category=category, recoverable=recoverable) from None
                 if attempt+1 >= attempts:
-                    raise AlpacaError("Alpaca GET 网络请求重试后仍失败；凭据不会写入日志",status) from None
-                LOGGER.warning("Alpaca GET 连接失败，%.1f 秒后重试（%d/%d）",backoff,attempt+1,self.max_get_retries)
+                    message = ("Alpaca GET 本次网络读取失败" if self.max_get_retries == 0
+                               else "Alpaca GET 网络读取重试后仍失败")
+                    raise AlpacaError(message,status,category=category,recoverable=recoverable) from None
+                if not recoverable:
+                    raise AlpacaError("Alpaca GET 安全连接验证失败",status,
+                                      category=category,recoverable=False) from None
+                LOGGER.warning("Alpaca GET 读取失败（%s），%.1f 秒后重试（%d/%d）",category,backoff,attempt+1,self.max_get_retries)
                 self._sleep(backoff)
                 backoff=min(8.0,backoff*2)
                 continue
@@ -425,23 +465,27 @@ class AlpacaPaperClient:
                         return None
                     if write:
                         raise SubmissionUnknown("Paper 写请求已受理但没有订单响应；请先查询订单",client_order_id=client_order_id,operation=method,order_id=order_id,status=status)
-                    raise AlpacaError("Alpaca GET 成功响应为空，无法验证数据",status)
+                    raise AlpacaError("Alpaca GET 成功响应为空，无法验证数据",status,
+                                      category="response_schema",recoverable=True)
                 try:
                     result = json.loads(body.decode("utf-8-sig"))
                 except (ValueError,UnicodeError):
                     if write:
                         raise SubmissionUnknown("Paper 写请求成功响应无法解析；请先查询订单，禁止重复提交",client_order_id=client_order_id,operation=method,order_id=order_id,status=status) from None
-                    raise AlpacaError("Alpaca GET 返回无效 JSON",status) from None
+                    raise AlpacaError("Alpaca GET 返回无效 JSON",status,
+                                      category="response_schema",recoverable=True) from None
                 if not isinstance(result,(dict,list)):
                     if write:
                         raise SubmissionUnknown("Paper 写请求成功响应格式未知；请先对账",client_order_id=client_order_id,operation=method,order_id=order_id,status=status)
-                    raise AlpacaError("Alpaca 响应必须是 JSON 对象或数组",status)
+                    raise AlpacaError("Alpaca 响应必须是 JSON 对象或数组",status,
+                                      category="response_schema",recoverable=True)
                 return result
             message,code = self._safe_message(body)
             if status in (401,403):
                 details = "凭据无效" if status==401 else "权限、行情订阅、期权级别或购买力不足"
                 LOGGER.error("Alpaca Paper HTTP %s：%s；%s",status,details,message)
-                raise AlpacaError(f"Alpaca Paper HTTP {status}：{details}；{message}",status,code)
+                raise AlpacaError(f"Alpaca Paper HTTP {status}：{details}；{message}",status,code,
+                                  category="authentication" if status == 401 else "permission")
             retryable = status in (408,429) or (status is not None and 500 <= status <= 599)
             if write and (status==408 or (status is not None and 500 <= status <= 599)):
                 raise SubmissionUnknown(f"Paper 写请求 HTTP {status}，不能确认是否受理；请先查询订单",client_order_id=client_order_id,operation=method,order_id=order_id,status=status)
@@ -451,13 +495,16 @@ class AlpacaPaperClient:
                 self._sleep(wait)
                 backoff=min(8.0,backoff*2)
                 continue
-            raise AlpacaError(f"Alpaca Paper 请求失败：HTTP {status} {code}；{message}",status,code)
+            category = ("rate_limit" if status == 429 else "http_timeout" if status == 408
+                        else "server" if status is not None and 500 <= status <= 599 else "http_rejected")
+            raise AlpacaError(f"Alpaca Paper 请求失败：HTTP {status} {code}；{message}",status,code,
+                              category=category,recoverable=retryable or (write and status in (400, 422)))
         raise AlpacaError("Alpaca 请求未完成")
 
     @staticmethod
     def _object(value: Any, name: str) -> dict[str,Any]:
         if not isinstance(value,dict):
-            raise AlpacaError(f"{name} 响应必须是 JSON 对象")
+            raise AlpacaError(f"{name} 响应必须是 JSON 对象",category="response_schema",recoverable=True)
         return value
 
     @staticmethod
@@ -474,7 +521,34 @@ class AlpacaPaperClient:
         return value
 
     def get_account(self) -> dict[str,Any]:
-        return self._object(self._request("GET","/v2/account"),"account")
+        account = self._object(self._request("GET","/v2/account"),"account")
+        coordinator = getattr(self, "shared_coordinator", None)
+        if coordinator is not None and str(account.get("id", "")) != coordinator.account_id:
+            raise AlpacaError("Paper账户与共享登记绑定不一致", category="ledger_integrity", recoverable=False)
+        return account
+
+    def attach_shared_coordinator(self, coordinator: Any, *, fee_reserve_usd: float = 2.0) -> None:
+        if coordinator.strategy != "options" or not math.isfinite(fee_reserve_usd) or fee_reserve_usd < 0:
+            raise AlpacaError("期权共享协调器或费用预留无效", category="ledger_integrity")
+        with coordinator.lock():
+            account = self.get_account()
+            if str(account.get("id", "")) != coordinator.account_id:
+                raise AlpacaError("期权共享协调器账户不一致", category="ledger_integrity")
+            self.shared_coordinator = coordinator
+            self.shared_fee_reserve_usd = fee_reserve_usd
+
+    def _observe_shared_order(self, order: dict[str, Any]) -> None:
+        coordinator = getattr(self, "shared_coordinator", None)
+        if coordinator is not None:
+            from shared_account import SharedAccountError, SharedAccountBlocked
+            try:
+                coordinator.observe_order(order)
+            except SharedAccountBlocked:
+                # An incomplete nested bracket response remains a temporary
+                # shared-account entry block; it is not foreign-order proof.
+                return
+            except SharedAccountError:
+                raise AlpacaError("共享订单归属或登记完整性异常", category="ledger_integrity") from None
 
     def get_clock(self) -> dict[str,Any]:
         return self._object(self._request("GET","/v2/clock"),"clock")
@@ -486,46 +560,69 @@ class AlpacaPaperClient:
             raise AlpacaError("calendar start 不得晚于 end")
         result=self._request("GET","/v2/calendar",params={"start":first.isoformat(),"end":last.isoformat()})
         if not isinstance(result,list) or any(not isinstance(row,dict) for row in result):
-            raise AlpacaError("calendar 响应必须是对象数组")
+            raise AlpacaError("calendar 响应必须是对象数组",category="response_schema",recoverable=True)
         return result
 
     def get_positions(self) -> list[dict[str,Any]]:
         result=self._request("GET","/v2/positions")
         if not isinstance(result,list) or any(not isinstance(row,dict) for row in result):
-            raise AlpacaError("positions 响应必须是对象数组")
+            raise AlpacaError("positions 响应必须是对象数组",category="response_schema",recoverable=True)
         return result
 
     def get_orders(self, status: str = "open") -> list[dict[str,Any]]:
         if status not in ("open","closed","all"):
             raise AlpacaError("订单查询 status 仅支持 open、closed、all")
         result: list[dict[str,Any]]=[]
-        params: dict[str,Any]={"status":status,"limit":500,"direction":"desc","nested":"false"}
+        params: dict[str,Any]={"status":status,"limit":500,"direction":"desc","nested":"true"}
         ids: set[str]=set()
         for _ in range(20):
             page=self._request("GET","/v2/orders",params=params)
             if not isinstance(page,list) or any(not isinstance(row,dict) for row in page):
-                raise AlpacaError("orders 响应必须是对象数组")
+                raise AlpacaError("orders 响应必须是对象数组",category="response_schema",recoverable=True)
             for row in page:
+                self._observe_shared_order(row)
                 identifier=self._identifier(row.get("id",""))
-                if identifier not in ids:
+                closed_parent = status == "open" and str(row.get("status", "")).lower() in {
+                    "filled", "canceled", "cancelled", "expired", "rejected", "failed", "voided", "replaced"}
+                if identifier not in ids and not closed_parent:
                     ids.add(identifier)
                     result.append(row)
+                for leg in row.get("legs") or []:
+                    if not isinstance(leg, dict):
+                        raise AlpacaError("嵌套订单保护腿响应无效", category="response_schema", recoverable=True)
+                    if status == "open" and str(leg.get("status", "")).lower() in {
+                            "filled", "canceled", "cancelled", "expired", "rejected", "failed", "voided", "replaced"}:
+                        continue
+                    leg_id = self._identifier(leg.get("id", ""))
+                    if leg_id not in ids:
+                        ids.add(leg_id)
+                        result.append(leg)
             if len(page)<500:
                 return result
             cursor=self._identifier(page[-1].get("id",""))
             if cursor==params.get("before_order_id"):
-                raise AlpacaError("订单分页未前进，安全停止，不能把不完整列表当作全部订单")
+                raise AlpacaError("订单分页未前进，安全停止，不能把不完整列表当作全部订单",category="response_schema",recoverable=True)
             params["before_order_id"]=cursor
-        raise AlpacaError("订单查询达到 10000 条安全上限；不能把截断结果当作全部订单")
+        raise AlpacaError("订单查询达到 10000 条安全上限；不能把截断结果当作全部订单",category="response_schema",recoverable=True)
 
     def get_order(self, order_id: str) -> dict[str,Any] | None:
-        result=self._request("GET","/v2/orders/"+self._identifier(order_id),none_on_404=True)
-        return None if result is None else self._object(result,"order")
+        result=self._request("GET","/v2/orders/"+self._identifier(order_id),params={"nested":"true"},none_on_404=True)
+        if result is None:
+            return None
+        order = self._object(result,"order")
+        self._observe_shared_order(order)
+        return order
 
     def get_order_by_client_id(self, client_order_id: str) -> dict[str,Any] | None:
         result=self._request("GET","/v2/orders:by_client_order_id",
                              params={"client_order_id":self._client_id(client_order_id)},none_on_404=True)
-        return None if result is None else self._object(result,"order")
+        if result is None:
+            return None
+        order = self._object(result,"order")
+        if str(order.get("order_class", "")) == "bracket" and not order.get("legs"):
+            return self.get_order(self._identifier(order.get("id", "")))
+        self._observe_shared_order(order)
+        return order
 
     def get_contract(self, symbol: str) -> dict[str,Any] | None:
         result=self._request("GET","/v2/options/contracts/"+parse.quote(normalize_option_symbol(symbol),safe=""),none_on_404=True)
@@ -543,7 +640,7 @@ class AlpacaPaperClient:
                                   params={"symbols":symbol,"feed":self._feed(feed),"limit":1}),"snapshots")
         snapshots=response.get("snapshots")
         if not isinstance(snapshots,dict):
-            raise AlpacaError("snapshots 响应缺少按合约索引的 snapshots 字典")
+            raise AlpacaError("snapshots 响应缺少按合约索引的 snapshots 字典",category="response_schema",recoverable=True)
         value=snapshots.get(symbol)
         return None if value is None else self._object(value,"single option snapshot")
 
@@ -569,7 +666,7 @@ class AlpacaPaperClient:
                                   params={"symbols":",".join(normalized),"feed":self._feed(feed)}),"quotes")
         quotes=response.get("quotes")
         if not isinstance(quotes,dict):
-            raise AlpacaError("quotes 响应缺少按合约索引的 quotes 字典")
+            raise AlpacaError("quotes 响应缺少按合约索引的 quotes 字典",category="response_schema",recoverable=True)
         result: dict[str, dict[str, Any]] = {}
         for symbol in normalized:
             value = quotes.get(symbol)
@@ -615,18 +712,95 @@ class AlpacaPaperClient:
                 order[field]=_positive_decimal(order.get(field),field)
             elif field in order:
                 raise AlpacaError(f"当前 order type 不应携带 {field}")
-        result=self._request("POST","/v2/orders",payload=order,client_order_id=order["client_order_id"],
-                             before_send=before_send)
-        if not isinstance(result,dict) or not result.get("id"):
-            raise SubmissionUnknown("Paper 创建订单响应缺少 id；请按 client_order_id 对账",client_order_id=order["client_order_id"],operation="POST")
-        return result
+        coordinator = getattr(self, "shared_coordinator", None)
+        with coordinator.lock() if coordinator is not None else contextlib.nullcontext():
+            if coordinator is not None:
+                from shared_account import SharedAccountError, SharedAccountBlocked
+                try:
+                    self.get_account()
+                    previous_intent = coordinator.intent_state(order["client_order_id"])
+                    if previous_intent is not None and previous_intent["write_attempted"]:
+                        raise SubmissionUnknown("共享登记显示该请求已尝试；必须查询原client_order_id", client_order_id=order["client_order_id"], operation="POST")
+                    coordinator.register_intent(order["client_order_id"], {
+                        **order, "asset_class": "us_option",
+                        "fee_reserve_usd": getattr(self, "shared_fee_reserve_usd", 2.0) if order["side"] == "buy" else 0.0,
+                    })
+                    coordinator.begin_write(order["client_order_id"])
+                except SharedAccountBlocked:
+                    raise SubmissionNotSent("共享账户等待核对或风险预算不足；未发送本次请求") from None
+                except SharedAccountError:
+                    raise AlpacaError("共享意图无法安全登记；未发送请求", category="ledger_integrity") from None
+            try:
+                with coordinator.write_scope(order["client_order_id"]) if coordinator is not None else contextlib.nullcontext():
+                    result=self._request("POST","/v2/orders",payload=order,client_order_id=order["client_order_id"],
+                                         before_send=before_send)
+                if not isinstance(result,dict) or not result.get("id"):
+                    raise SubmissionUnknown("Paper 创建订单响应缺少 id；请按 client_order_id 对账",client_order_id=order["client_order_id"],operation="POST")
+            except SubmissionUnknown:
+                if coordinator is not None:
+                    coordinator.mark_unknown(order["client_order_id"])
+                raise
+            except (SubmissionNotSent, AlpacaError):
+                if coordinator is not None:
+                    coordinator.mark_not_sent(order["client_order_id"])
+                raise
+            except Exception:
+                if coordinator is not None:
+                    coordinator.mark_unknown(order["client_order_id"])
+                raise SubmissionUnknown("Paper写请求结果需按client_order_id重新核对", client_order_id=order["client_order_id"], operation="POST") from None
+            if coordinator is not None:
+                try:
+                    coordinator.register_order(result)
+                except SharedAccountError as exc:
+                    coordinator.mark_unknown(order["client_order_id"])
+                    raise SubmissionUnknown("Paper响应无法与共享意图核对，保留预算等待对账", client_order_id=order["client_order_id"], operation="POST", category=exc.category, recoverable=exc.recoverable) from None
+            return result
 
-    def cancel_order(self, order_id: str) -> None:
+    def cancel_order(self, order_id: str, *, before_send: Callable[[], None] | None = None) -> None:
         """204 仅为取消受理；调用者必须继续 GET 检查 canceled/filled 等终态。"""
         identifier=self._identifier(order_id)
-        self._request("DELETE","/v2/orders/"+identifier,order_id=identifier)
+        coordinator = getattr(self, "shared_coordinator", None)
+        with coordinator.lock() if coordinator is not None else contextlib.nullcontext():
+            if coordinator is not None:
+                from shared_account import SharedAccountError, SharedAccountBlocked
+                try:
+                    self.get_account()
+                    actual = self.get_order(identifier)
+                    if actual is None or not coordinator.owns_order(actual):
+                        raise SharedAccountBlocked("Only exactly owned orders can be canceled")
+                    coordinator.begin_cancel(identifier)
+                except SharedAccountBlocked:
+                    raise SubmissionNotSent("撤单归属或一次性登记检查未通过；未发送撤单") from None
+                except SharedAccountError:
+                    raise AlpacaError("共享撤单登记完整性异常；未发送撤单", category="ledger_integrity") from None
+            try:
+                self._request("DELETE","/v2/orders/"+identifier,order_id=identifier,before_send=before_send)
+            except SubmissionUnknown:
+                if coordinator is not None:
+                    coordinator.mark_unknown(identifier)
+                raise
+            except (SubmissionNotSent, AlpacaError):
+                if coordinator is not None:
+                    coordinator.cancel_not_sent(identifier)
+                raise
+            except Exception:
+                if coordinator is not None:
+                    coordinator.mark_unknown(identifier)
+                raise SubmissionUnknown("Paper撤单结果未知，需要查询原订单", operation="DELETE", order_id=identifier) from None
+            if coordinator is not None:
+                coordinator.mark_unknown(identifier)
 
     def replace_order(self, order_id: str, payload: Mapping[str,Any]) -> dict[str,Any]:
+        coordinator = getattr(self, "shared_coordinator", None)
+        if coordinator is not None:
+            # No caller in the options strategy replaces orders. A replacement
+            # can inherit cumulative fills and requires a fully reconciled chain;
+            # refusing it prevents duplicate exposure across the two strategies.
+            with coordinator.lock():
+                actual = self.get_order(self._identifier(order_id))
+                if actual is None or not coordinator.owns_order(actual):
+                    raise SubmissionNotSent("共享模式只能处理精确归属订单；未发送替换请求")
+                raise SubmissionNotSent("共享模式尚未支持完整替换链；请核对撤单终态后用新ID提交")
         identifier=self._identifier(order_id)
         if not isinstance(payload,Mapping) or not payload:
             raise AlpacaError("替换订单 payload 必须是非空字典")

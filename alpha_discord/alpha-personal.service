@@ -1,0 +1,44 @@
+[Unit]
+Description=AlphaAgent personal source observer and informational signal forwarder
+Wants=network-online.target
+After=network-online.target
+ConditionPathExists=/etc/yhs-qq/alpha_personal_credentials.json
+ConditionPathExists=/etc/yhs-qq/alpha_personal_cloud_config.json
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=yhsqq
+Group=yhsqq
+WorkingDirectory=/opt/yhs-qq/alpha-personal
+LoadCredential=discord-personal:/etc/yhs-qq/alpha_personal_credentials.json
+LoadCredential=config:/etc/yhs-qq/alpha_personal_cloud_config.json
+ExecStart=/opt/yhs-qq/alpha-personal/.venv/bin/python -u -B -m alpha_discord.personal_cloud_runner
+Environment=PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1
+# app/runtime is an ordinary directory. Its alpha_personal_local child is a
+# symlink to /var/lib/yhs-qq/alpha-personal, preserving the observer path check.
+ReadWritePaths=/var/lib/yhs-qq/alpha-personal
+Restart=on-failure
+RestartSec=60
+TimeoutStartSec=180
+TimeoutStopSec=45
+KillSignal=SIGTERM
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+LimitCORE=0
+
+[Install]
+WantedBy=multi-user.target
