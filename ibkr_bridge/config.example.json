@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "mode": "ibkr_live_read_only",
+  "readonly": true,
+  "ibkr": {
+    "host": "127.0.0.1",
+    "port": 7496,
+    "client_id": 17931,
+    "request_timeout_seconds": 6,
+    "quote_timeout_seconds": 3,
+    "max_quote_age_seconds": 2,
+    "account_sha256": null
+  },
+  "source": {
+    "kind": "ssh_live_readonly",
+    "ssh_host": null,
+    "ssh_user": null,
+    "ssh_port": 22,
+    "identity_file": null,
+    "known_hosts_file": null
+  },
+  "display": {
+    "max_open_signal_age_seconds": 30,
+    "max_close_signal_age_seconds": 120,
+    "max_buy_premium_pct": 3,
+    "quantity": null,
+    "poll_seconds": 1,
+    "limit": 20
+  },
+  "notifications": {
+    "enabled": false,
+    "use_existing_discord": true
+  }
+}

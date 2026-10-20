@@ -1,5 +1,10 @@
 继续完善 Dennis AlphaAgent → Alpaca Paper 跟单程序。
 
+仓库另有 ibkr_bridge/ 只读支线，可独立完善本机TWS账户绑定、信号时效、
+精确期权合约匹配和只读报价预览。此支线允许用户选定的实盘账户读取，
+但绝不添加实盘下单、改单、撤单、exercise或启用交易开关；保持TWS Read-Only API。
+不要将模拟盘仓位或预算自动套用到实盘，实盘数量必须保持null。
+
 先读 AGENTS.md、README.md、DEVELOPMENT.md，再查看 alpha_discord/。
 只围绕当前 Dennis 原频道 AlphaAgent 跟单链路；旧 YHS 架构保留，不恢复旧策略开仓。
 

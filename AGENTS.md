@@ -9,9 +9,18 @@ do not re-enable it or treat `main.py --replay` as validation of the current sys
 `stock_quant/common.py` and `notifications.py` are shared infrastructure; their
 presence does not authorize new stock strategies or entries.
 
+The separate `ibkr_bridge/` sidecar may observe a user-selected live IBKR
+account through local TWS/IB Gateway. It is strictly read-only: exact account
+binding, positions, contract matching, data quotes and informational previews.
+Keep TWS Read-Only API enabled, client ID nonzero, and the endpoint on literal
+loopback. User login and 2FA stay in the official local client. Never implement
+an order-submission, modification, cancellation, exercise, what-if order or
+execution-enabling switch. Do not infer ownership or adopt existing positions.
+
 ## Preserve the authorized policy
 
-- Paper endpoint only; no live-account support or live-order calls.
+- Alpaca execution is Paper endpoint only. The IBKR sidecar permits live-account
+  observations only; no live-order calls anywhere.
 - OPEN: source creation age at most 30 seconds; maximum buy price is Entry +3%,
   rounded down to supported cents. Use the existing limit-order rules.
 - Target entry debit $4,000, allowed $3,000–$5,000 with a flat $2 reserve per

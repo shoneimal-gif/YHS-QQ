@@ -3,6 +3,16 @@
 当前开发主线：读取 Dennis 原频道的已验证 AlphaAgent 期权信号，交由独立跟单程序执行
 Alpaca **模拟盘**，并将结果推送 Discord。旧 YHS QQ 策略代码保留。
 
+## IBKR 实盘只读观察
+
+新增独立的 `ibkr_bridge/`，沿用已验证的原信号来源，通过本机已登录的 TWS / IB Gateway
+核对绑定账户、持仓、精确期权合约及报价，生成无数量的只读预览。可选复用自己的
+Discord 通知；实盘买卖由用户在 IBKR 客户端确认。此模块没有任何订单执行接口。
+
+初始账户未绑定、来源位置为空、通知关闭，不能直接启动账户预览。安装步骤和
+Windows 入口见 [IBKR_READONLY_GUIDE.md](IBKR_READONLY_GUIDE.md)。独立本地状态位于
+已忽略的 `runtime/ibkr_readonly/`，不使用或修改 Alpaca Paper 的交易账本。
+
 ## 当前代码
 
 | 部分 | 路径 | 职责 |
