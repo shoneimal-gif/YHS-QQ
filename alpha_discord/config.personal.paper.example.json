@@ -24,7 +24,10 @@
   "max_quote_age_seconds": 30,
   "observer_status_max_age_seconds": 20,
   "entry_timeout_seconds": 30,
-  "poll_seconds": 1,
+  "poll_seconds": 5,
   "quote_feed": "indicative",
-  "armed_at_utc": null
+  "armed_at_utc": null,
+  "entry_limit_method": "reference_cap",
+  "snapshot_reuse_enabled": true,
+  "source_wakeup_enabled": true
 }

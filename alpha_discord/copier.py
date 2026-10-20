@@ -25,6 +25,7 @@ import re
 import signal
 import sqlite3
 import threading
+import time
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation, ROUND_CEILING, ROUND_FLOOR
 from pathlib import Path
@@ -47,6 +48,8 @@ _ID = re.compile(r"[1-9][0-9]{0,19}\Z")
 _FIELDS = ("source_guild_id", "source_channel_id", "target_guild_id", "target_channel_id")
 _FOLLOW_MODE = "native_announcement_follow"
 _PERSONAL_MODE = "direct_personal_account"
+_SNAPSHOT_REUSE_MAX_AGE_SECONDS = 2.0
+_SOURCE_WAKEUP_INTERVAL_SECONDS = 0.2
 _PERMANENT = {"ledger_integrity", "authentication", "permission", "tls_verification", "client_closed"}
 _DEFER = {"broker_warmup", "shared_account_waiting", "market_closed", "close_market_closed",
           "owned_fill_not_yet_confirmed", "owned_order_not_yet_confirmed", "option_quantity_not_reconciled",
@@ -112,10 +115,16 @@ def validate_config(config: Mapping[str, Any]) -> dict[str, Any]:
             raise CopyError("source_binding_required", permanent=True)
     cfg.setdefault("source_mode", _FOLLOW_MODE)
     cfg.setdefault("quantity_policy", "legacy_open_1x")
+    cfg.setdefault("entry_limit_method", "legacy_ask")
     if cfg["source_mode"] not in (_FOLLOW_MODE, _PERSONAL_MODE):
         raise CopyError("unsupported_source_mode", permanent=True)
     if cfg["quantity_policy"] not in ("legacy_open_1x", "fixed_one_contract", "budget_range_contracts"):
         raise CopyError("unsupported_quantity_policy", permanent=True)
+    if cfg["entry_limit_method"] not in ("legacy_ask", "reference_cap"):
+        raise CopyError("unsupported_entry_limit_method", permanent=True)
+    if (cfg["entry_limit_method"] == "reference_cap"
+            and (cfg["source_mode"] != _PERSONAL_MODE or cfg["quantity_policy"] != "budget_range_contracts")):
+        raise CopyError("reference_cap_requires_direct_budget_policy", permanent=True)
     if cfg["source_mode"] == _PERSONAL_MODE:
         personal_binding(cfg, error_class=CopyError)
         if cfg["quantity_policy"] not in ("fixed_one_contract", "budget_range_contracts"):
@@ -146,6 +155,13 @@ def validate_config(config: Mapping[str, Any]) -> dict[str, Any]:
     cfg.setdefault("execute_paper", False)
     if type(cfg["execute_paper"]) is not bool:
         raise CopyError("invalid_execution_mode", permanent=True)
+    for key in ("snapshot_reuse_enabled", "source_wakeup_enabled"):
+        cfg.setdefault(key, False)
+        if type(cfg[key]) is not bool:
+            raise CopyError("invalid_latency_control", permanent=True)
+        if cfg[key] and (cfg["source_mode"] != _PERSONAL_MODE
+                         or cfg["quantity_policy"] != "budget_range_contracts"):
+            raise CopyError("latency_controls_require_direct_budget_source", permanent=True)
     for key, default, upper in (("max_signal_age_seconds", 120, 120), ("max_quote_age_seconds", 30, 30),
                                ("observer_status_max_age_seconds", 20, 30), ("entry_timeout_seconds", 120, 120),
                                ("poll_seconds", 5, 30)):
@@ -335,6 +351,13 @@ class CopyEngine:
         self.bound, self.legacy_leased = False, False
         self.last_error, self.last_snapshot = None, None
         self.forced_order_refresh: set[str] = set()
+        self._step_snapshot_scope = False
+        self._step_snapshot = None
+        self._step_snapshot_saved_at = None
+        self._step_snapshot_signature = None
+        self._snapshot_reuses_step = self._snapshot_reuses_total = 0
+        self._snapshot_attempts_step = self._source_wakeups_total = 0
+        self._source_wakeup_probe_healthy = None
         self.leases.append(_Lease(self.runtime / "copier.lock"))
 
     def _bind(self) -> None:
@@ -602,7 +625,9 @@ class CopyEngine:
         price = "源价 " + show(record.get("source_reference_price_decimal"))
         if record.get("action") == "open":
             price += " | ask " + show(record.get("observed_ask_decimal")) + " | 限价 " + show(record.get("limit_price_decimal"))
-            price += " | 价差% " + show(record.get("limit_vs_reference_pct")) + " | 上限 " + show(record.get("entry_price_cap_decimal"))
+            price += " | ask溢价% " + show(record.get("ask_vs_reference_pct"))
+            price += " | 委托溢价% " + show(record.get("limit_vs_reference_pct")) + " | 上限 " + show(record.get("entry_price_cap_decimal"))
+            price += " | 限价方式 " + show(record.get("entry_limit_method", "legacy_ask"))
         delays = "源→接收 " + show(record.get("source_to_receive_seconds"))
         delays += " | 源→决定 " + show(record.get("source_to_decision_seconds"))
         delays += " | 接收→提交 " + show(record.get("receive_to_submit_seconds"))
@@ -713,6 +738,67 @@ class CopyEngine:
         if old_status != status and status in {"rejected", "failed", "voided", "canceled", "cancelled", "expired"}:
             self.ledger.notice("terminal:" + payload["client_order_id"] + ":" + status, "AlphaAgent 模拟盘订单终止", fields)
         self.ledger.save()
+
+    def _invalidate_step_snapshot(self) -> None:
+        self._step_snapshot = None
+        self._step_snapshot_saved_at = None
+        self._step_snapshot_signature = None
+
+    def _risk_signature(self) -> str:
+        # Include complete order/lot state so maintenance, a partial fill,
+        # cancellation or a pending CLOSE cannot silently reuse old evidence.
+        # This digest is only an in-memory cache guard, never a ledger binding.
+        encoded = json.dumps({"orders": self.ledger.state["orders"],
+                              "lots": self.ledger.state["lots"],
+                              "forced_order_refresh": sorted(self.forced_order_refresh)},
+                             sort_keys=True, separators=(",", ":"), allow_nan=False)
+        return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
+
+    def _execution_snapshot(self) -> dict[str, Any]:
+        # Scope is set only while step() holds the shared account OS lock.
+        # Never reuse evidence across steps or after a broker write attempt.
+        reusable = (self.config["snapshot_reuse_enabled"] and self._step_snapshot_scope
+                    and not self.stop.is_set() and self._step_snapshot is not None
+                    and self._step_snapshot_saved_at is not None
+                    and 0 <= time.monotonic() - self._step_snapshot_saved_at <= _SNAPSHOT_REUSE_MAX_AGE_SECONDS
+                    and not self.forced_order_refresh
+                    and self._step_snapshot_signature == self._risk_signature()
+                    and _age(self._step_snapshot["clock"]["timestamp"], 30))
+        if reusable:
+            self._snapshot_reuses_step += 1
+            self._snapshot_reuses_total += 1
+            return self._step_snapshot
+        self._invalidate_step_snapshot()
+        self._snapshot_attempts_step += 1
+        snapshot = self._snapshot()
+        self.last_snapshot = snapshot
+        if self.config["snapshot_reuse_enabled"] and self._step_snapshot_scope and not self.stop.is_set():
+            self._step_snapshot = snapshot
+            self._step_snapshot_saved_at = time.monotonic()
+            self._step_snapshot_signature = self._risk_signature()
+        return snapshot
+
+    def _source_change_token(self) -> tuple[int, int] | None:
+        # A local wake-up cue grants no source/trading authorization. Normal
+        # step(), _source(), reconciliation and before_send still run in full.
+        # Keep startup and broker failures on the configured periodic cadence.
+        if (not self.config["source_wakeup_enabled"] or self.healthy_polls < 2
+                or self.last_error is not None or self.personal_source is None
+                or self.personal_source.db is None or not self.ledger
+                or self.ledger.state["halts"]):
+            return None
+        db = self.personal_source.db
+        try:
+            row = db.execute("PRAGMA data_version").fetchone()
+            if row is None or type(row[0]) is not int:
+                self._source_wakeup_probe_healthy = False
+                return None
+        except sqlite3.Error:
+            self._source_wakeup_probe_healthy = False
+            return None
+        self._source_wakeup_probe_healthy = True
+        # Versions are only comparable on the same SQLite connection.
+        return id(db), row[0]
 
     def _snapshot(self) -> dict[str, Any]:
         with self.coordinator.lock():
@@ -922,7 +1008,15 @@ class CopyEngine:
                     raise CopyError("entry_price_policy_binding_changed", permanent=True)
                 limit = Decimal(intent["payload"]["limit_price"])
                 ask = Decimal(str(quote["ask"])).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
-                if limit <= 0 or limit != ask or limit > cap:
+                # An intent's price method is immutable. Missing method means
+                # the original ask-priced policy, even after a config upgrade.
+                method = expected.get("entry_limit_method", "legacy_ask")
+                if method not in ("legacy_ask", "reference_cap"):
+                    raise CopyError("unsupported_entry_limit_method", permanent=True)
+                if method == "reference_cap" and self.config["quantity_policy"] != "budget_range_contracts":
+                    raise CopyError("reference_cap_requires_direct_budget_policy", permanent=True)
+                expected_limit = cap if method == "reference_cap" else ask
+                if limit <= 0 or limit != expected_limit or ask > cap or limit > cap:
                     raise CopyError("entry_price_above_reference_cap")
                 if self.config["quantity_policy"] == "budget_range_contracts":
                     debit = limit * 100 * _requested_qty(intent["payload"]) + Decimal("2")
@@ -963,6 +1057,7 @@ class CopyEngine:
                 record.update(final_gate_rejection_category=exc.category, final_gate_rejected_utc=_now().isoformat())
                 self.ledger.save()
                 raise
+        self._invalidate_step_snapshot()
         intent["write_attempted"] = True
         self.ledger.save()  # durable attempt marker precedes the one client call
         try:
@@ -1001,6 +1096,7 @@ class CopyEngine:
             return
         if intent["cancel_attempted"] or not intent["order_id"] or intent["phase"] != "PENDING":
             return
+        self._invalidate_step_snapshot()
         intent["cancel_attempted"] = True
         self.ledger.save()
         try:
@@ -1023,6 +1119,7 @@ class CopyEngine:
             reference, cap = self._entry_cap(parsed)
             price_policy = {"source_reference_price_decimal": format(reference, "f"),
                             "entry_price_cap_decimal": format(cap, "f"),
+                            "entry_limit_method": self.config["entry_limit_method"],
                             "max_entry_price_premium_pct": self.config["max_entry_price_premium_pct"],
                             "max_entry_signal_age_seconds": self.config["max_entry_signal_age_seconds"]}
             record.update(price_policy)
@@ -1041,7 +1138,7 @@ class CopyEngine:
                     and (self._remaining(lot) or entry["phase"] not in ("NOT_SENT", "TERMINAL"))):
                 raise CopyError("same_occ_and_tier_already_owned_or_pending")
         with self.coordinator.lock():
-            snapshot = self._snapshot()
+            snapshot = self._execution_snapshot()
             if self.healthy_polls < 2:
                 raise CopyError("broker_warmup")
             if self.ledger.state["halts"]:
@@ -1055,13 +1152,16 @@ class CopyEngine:
             if not snapshot["shared_entries_allowed"]:
                 raise CopyError("shared_account_waiting")
             quote = self._quote(occ)
-            limit = Decimal(str(quote["ask"])).quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+            observed_ask = Decimal(str(quote["ask"]))
+            ask_limit = observed_ask.quantize(Decimal("0.01"), rounding=ROUND_CEILING)
+            limit = cap if price_policy is not None and price_policy["entry_limit_method"] == "reference_cap" else ask_limit
             record.update(observed_ask_decimal=str(quote["ask"]), limit_price_decimal=format(limit, "f"),
                           quote_timestamp_utc=quote["quoted_at"])
             if price_policy is not None:
+                record["ask_vs_reference_pct"] = float(((observed_ask / reference - 1) * 100).quantize(Decimal("0.000001")))
                 record["limit_vs_reference_pct"] = float(((limit / reference - 1) * 100).quantize(Decimal("0.000001")))
                 self._entry_age(key)
-                if limit > cap:
+                if ask_limit > cap or limit <= 0 or limit > cap:
                     raise CopyError("entry_price_above_reference_cap")
             quantity = 1
             if self.config["quantity_policy"] == "budget_range_contracts":
@@ -1141,7 +1241,7 @@ class CopyEngine:
             self._claim(close["key"], "close_" + exc.category, lot_id=lot["lot_id"])
             return
         with self.coordinator.lock():
-            snapshot = self._snapshot()
+            snapshot = self._execution_snapshot()
             entry = self.ledger.state["orders"][lot["entry_client_id"]]
             if entry["phase"] not in ("NOT_SENT", "TERMINAL"):
                 self._cancel_entry(entry)
@@ -1300,6 +1400,21 @@ class CopyEngine:
                                      else "verified_native_announcement_follower_channel"),
                 "source_binding_sha256": self.personal_source.binding_sha256 if self.personal_source is not None else None,
                 "quantity_policy": self.config["quantity_policy"],
+                "execution_latency_controls": {
+                    "snapshot_reuse_enabled": self.config["snapshot_reuse_enabled"],
+                    "snapshot_scope": "single_step_under_shared_account_lock",
+                    "snapshot_max_reuse_age_seconds": _SNAPSHOT_REUSE_MAX_AGE_SECONDS,
+                    "full_snapshot_attempts_current_step": self._snapshot_attempts_step,
+                    "snapshot_reuses_current_step": self._snapshot_reuses_step,
+                    "snapshot_reuses_process_total": self._snapshot_reuses_total,
+                    "source_wakeup_enabled": self.config["source_wakeup_enabled"],
+                    "source_wakeup_check_seconds": _SOURCE_WAKEUP_INTERVAL_SECONDS,
+                    "source_wakeup_basis": "local_sqlite_change_cue_only_not_signal_authorization",
+                    "source_wakeup_probe_healthy": self._source_wakeup_probe_healthy,
+                    "source_wakeups_process_total": self._source_wakeups_total,
+                    "periodic_poll_seconds": self.config["poll_seconds"],
+                    "broker_rate_limit_changed": False,
+                    "final_submit_account_check_retained": True},
                 "copy_policy": ("OPEN_budget_range_whole_contracts_CLOSE_only_owned_exact_OCC_and_tier" if self.config["quantity_policy"] == "budget_range_contracts"
                                 else "EVERY_OPEN_BUY_TO_OPEN_one_CLOSE_only_owned_exact_OCC_and_tier" if self.config["quantity_policy"] == "fixed_one_contract"
                                 else "OPEN1x_BUY_TO_OPEN_one_CLOSE_only_owned_exact_OCC_and_tier"),
@@ -1312,6 +1427,7 @@ class CopyEngine:
                     "terminal_partial_exit": "manual_review_no_automatic_residual_order"}
                     if self.config["quantity_policy"] == "budget_range_contracts" else None,
                 "entry_limit_policy": {"source": "Dennis_original_AlphaAgent_only",
+                    "entry_limit_method": self.config["entry_limit_method"],
                     "max_entry_price_premium_pct": self.config["max_entry_price_premium_pct"],
                     "max_entry_signal_age_seconds": self.config["max_entry_signal_age_seconds"],
                     "reference_cap_rounding": "floor_to_cent", "ask_limit_rounding": "ceil_to_cent",
@@ -1339,6 +1455,9 @@ class CopyEngine:
                 "notifications_are_outbox_acknowledgements_not_delivery_proof": True}
 
     def step(self) -> dict[str, Any]:
+        self._step_snapshot_scope = False
+        self._invalidate_step_snapshot()
+        self._snapshot_reuses_step = self._snapshot_attempts_step = 0
         try:
             if not self.bound:
                 self._bind()
@@ -1349,11 +1468,20 @@ class CopyEngine:
                     self._claim(key, "entry_signal_too_old")
                 elif (_now() - _snowflake(key.rsplit(":", 1)[-1])).total_seconds() > self.config["max_signal_age_seconds"]:
                     self._claim(key, "source_expired_while_waiting_for_safety_gate")
-            self.last_snapshot = self._snapshot()
-            self.healthy_polls = min(2, self.healthy_polls + 1)
-            self.last_error = None
-            self._maintenance()
-            self._consume()
+            # With reuse enabled, other local strategies cannot change the
+            # shared registry between reconciliation and action. The lock is
+            # reentrant for the existing nested snapshot/submit/cancel paths.
+            with self.coordinator.lock() if self.config["snapshot_reuse_enabled"] else contextlib.nullcontext():
+                self._step_snapshot_scope = self.config["snapshot_reuse_enabled"]
+                try:
+                    self.last_snapshot = self._execution_snapshot()
+                    self.healthy_polls = min(2, self.healthy_polls + 1)
+                    self.last_error = None
+                    self._maintenance()
+                    self._consume()
+                finally:
+                    self._step_snapshot_scope = False
+                    self._invalidate_step_snapshot()
         except (CopyError, AlpacaError, SharedAccountError, sqlite3.Error, OSError, ValueError, TypeError, KeyError, InvalidOperation, AttributeError) as exc:
             category = exc.category if isinstance(exc, (CopyError, AlpacaError, SharedAccountError)) else "state_or_response_unconfirmed"
             permanent = (getattr(exc, "permanent", False) or category in _PERMANENT
@@ -1369,6 +1497,9 @@ class CopyEngine:
                 self.ledger.save()
             if permanent and self.ledger is None:
                 raise
+        finally:
+            self._step_snapshot_scope = False
+            self._invalidate_step_snapshot()
         if self.ledger:
             self.ledger.flush(self.notifier)
         report = self.status()
@@ -1376,6 +1507,8 @@ class CopyEngine:
         return report
 
     def close(self) -> None:
+        self._step_snapshot_scope = False
+        self._invalidate_step_snapshot()
         if self.ledger:
             self.ledger.save()
             self.ledger.flush(self.notifier)
@@ -1405,14 +1538,28 @@ def run_copier(config: Mapping[str, Any], broker: Any, *, observer_runtime: Path
         engine = CopyEngine(config, broker, observer_runtime=observer_runtime, runtime=runtime,
                             coordinator_root=coordinator_root, notifier=notifier, stop_event=stopping)
         while not stopping.is_set():
+            # Capture before step, so a source commit during broker work cannot
+            # be lost by arming the wait only after processing has finished.
+            source_token = engine._source_change_token() if not once else None
             report = engine.step()
             if once:
                 break
-            remaining = float(engine.config["poll_seconds"])
-            while remaining > 0 and not stopping.is_set():
-                interval = min(remaining, 1.0)
+            deadline = time.monotonic() + float(engine.config["poll_seconds"])
+            while not stopping.is_set():
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    break
+                if source_token is not None:
+                    current = engine._source_change_token()
+                    if current is None:
+                        # Failed/unavailable probes fall back to the original
+                        # periodic wait; None is never a change notification.
+                        source_token = None
+                    elif current != source_token:
+                        engine._source_wakeups_total += 1
+                        break
+                interval = min(remaining, _SOURCE_WAKEUP_INTERVAL_SECONDS if source_token is not None else 1.0)
                 stopping.wait(interval)
-                remaining -= interval
         return report
     finally:
         if engine is not None:
