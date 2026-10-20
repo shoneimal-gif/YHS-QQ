@@ -1,0 +1,38 @@
+[Unit]
+Description=AlphaAgent exact-contract Alpaca Paper copy execution
+Wants=network-online.target alpha-personal.service
+After=network-online.target alpha-personal.service
+ConditionPathExists=/etc/yhs-qq/alpha_paper_config.json
+StartLimitIntervalSec=1800
+StartLimitBurst=5
+
+[Service]
+Type=simple
+User=yhsqq
+Group=yhsqq
+WorkingDirectory=/opt/yhs-qq/alpha-paper
+LoadCredential=api:/etc/yhs-qq/credentials.json
+LoadCredential=config:/etc/yhs-qq/alpha_paper_config.json
+ExecStart=/opt/yhs-qq/alpha-paper/.venv/bin/python -u -B -m alpha_discord.runner --config %d/config --runtime /var/lib/yhs-qq/alpha-paper --observer-runtime /var/lib/yhs-qq/alpha-personal
+Environment=PYTHONUTF8=1 PYTHONDONTWRITEBYTECODE=1
+Restart=on-failure
+RestartSec=60
+KillSignal=SIGTERM
+TimeoutStopSec=45
+UMask=0077
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/yhs-qq/alpha-paper /var/lib/yhs-qq/runtime/account_coordination /var/lib/yhs-qq/runtime/alpaca_accounts /var/lib/yhs-qq/alpha-personal
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+[Install]
+WantedBy=multi-user.target

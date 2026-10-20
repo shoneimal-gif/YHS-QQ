@@ -11,7 +11,8 @@
 - 正常收盘或休市退出后，等待下次定时启动。异常退出等待 60 秒重试，30 分钟内最多启动 5 次，达到上限后需要排查并恢复。
 - 定时器支持补启动；服务器故障期间的策略监控无法补做。程序恢复时从持久化账本和券商状态对账。
 - `runtime` 保存在 `/var/lib/yhs-qq/runtime`，`/opt/yhs-qq/app/runtime` 链接到该目录。重启、升级保留原始交易账本、额度记录和每日缓存。
-- API 密钥位于服务器 `/etc/yhs-qq/credentials.json`，只有 root 可读，通过 systemd 的 `LoadCredential` 提供给服务；不进入部署包或 GitHub。
+- API 密钥和可选 Discord Webhook 位于服务器 `/etc/yhs-qq/credentials.json`，目录权限 `0700`、文件权限 `0600`，只有 root 可读，通过现有 `LoadCredential=api` 提供给服务；不进入部署包或 GitHub。
+- 云端不继承本机通知配置。当前订单通知使用 Discord；默认未配置 Webhook 时通知关闭，交易账本和待发队列保留。
 
 定时器和凭据机制参考 [systemd 时间表达式](https://manpages.ubuntu.com/manpages/jammy/man7/systemd.time.7.html) 与 [systemd 凭据文档](https://github.com/systemd/systemd/blob/main/docs/CREDENTIALS.md)。
 
@@ -19,7 +20,7 @@
 
 需要服务器 IP/域名、SSH 用户名、端口及本机可用的 SSH 身份。账户应能使用 sudo。
 初次连接，按云控制台提供的 SSH 主机指纹核对服务器；不要关闭 SSH 主机身份校验。
-机器人不需要开放网站端口，只需服务器能访问 YHS 和 Alpaca 的 HTTPS API。
+机器人不需要开放网站端口。真实运行需要服务器能通过 HTTPS 访问 YHS、Alpaca Paper/行情接口，启用通知后还需访问 `discord.com`。配置脚本与本文的离线测试不访问这些服务。
 
 ## 2. 停止旧实例并打包
 
@@ -46,8 +47,9 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Upload-Cloud.ps
 ```
 
 上传脚本核对远端部署包 SHA256，再执行安装器。安装器创建专用用户、代码目录、状态目录、服务及定时器。
-安装过程不启动服务。服务已经运行或定时器已经启用时，安装器拒绝覆盖；升级前需在适当时段停止服务和定时器。
+安装过程不启用或启动服务与定时器。任何一个仍在运行、启动/停止过程中或已经启用自动启动时，安装器拒绝覆盖；升级前需在适当时段显式停用服务和定时器，再停止当前实例。
 已有服务器 `runtime` 非空时保持原样，不用本地旧账本覆盖。需要合并或更换账本时先核对两端状态。
+首次导入在同一状态目录内写入隐藏临时目录、逐文件复核 SHA256 并刷盘，完整后才原子切换为空的 `runtime`。中断不会把部分导入识别为完整账本；不要为了重试安装删除已有交易状态。
 
 ## 4. 在服务器设置密钥
 
@@ -57,8 +59,25 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\deploy\Upload-Cloud.ps
 sudo python3 /opt/yhs-qq/app/deploy/linux/configure_keys.py
 ```
 
-依次隐藏输入 Alpaca Paper 的 API Key、Secret Key 和 YHS API Key。不要把密钥发到聊天或放在命令参数中。
+依次隐藏输入 Alpaca Paper 的 API Key、Secret Key 和 YHS API Key。仅配置 API 时，已有合法 Discord 字段保持不变；首次安装不要求 Webhook，也不会自动开启通知。不要把密钥发到聊天或放在命令参数中。
 更新密钥前先停止云端服务和定时器，避免不同启动过程读取不同配置。
+
+需要 Discord 订单通知时，在服务器执行：
+
+```bash
+sudo python3 /opt/yhs-qq/app/deploy/linux/configure_keys.py --discord
+```
+
+隐藏输入三个 API Key 后，额外隐藏输入官方频道 Webhook。脚本把可选 `YHS_DISCORD_WEBHOOK` 字段原子保存到同一个 root-only JSON，不发送测试消息或订单，也不启用 timer。支持现有仅含三个 API 字段的凭据文件；非法 URL 或保存中断保留原文件。
+runner 通过 systemd 的凭据副本读取字段，仅在执行 Paper 模式注入 Discord，退出时恢复环境；只读检查与预览不启用订单通知。旧企业微信或 pushplus 环境变量不会由云 runner 注入，当前主程序也不读取它们的私有配置文件；旧账本和通知队列保持原样。
+
+需停止通知时，重新隐藏输入三个 API Key 并明确移除 Discord 配置：
+
+```bash
+sudo python3 /opt/yhs-qq/app/deploy/linux/configure_keys.py --remove-discord
+```
+
+此操作只改凭据，不删除账本或 `discord_outbox.json`。已运行进程需在适当时段正常停止并重启才能加载新配置；待发事件在下次启用 Discord 后继续重试。不要强杀持仓进程来更新通知。
 
 ## 5. 只读检查和预览
 
@@ -116,6 +135,7 @@ sudo journalctl -u yhs-qq.service -f
 
 # 停止自动启动，再停止当前实例
 sudo systemctl disable --now yhs-qq.timer
+sudo systemctl disable yhs-qq.service
 sudo systemctl stop yhs-qq.service
 
 # 修复问题后清除启动次数限制并恢复
@@ -128,5 +148,11 @@ sudo systemctl enable --now yhs-qq.timer
 
 ## 部署范围
 
-此方案提供定时启动、进程监管和持久化账本，不包含额外的远程报警服务。
+此方案提供定时启动、进程监管和持久化账本，以及配置后运行的 Discord 订单事件通知。通知队列位于账户状态目录的 `discord_outbox.json`，没有 Webhook；不是独立服务器故障报警服务。服务器故障期间，通知无法代替券商对账。
 当前止盈止损依赖程序在线监控，云服务器故障或接口失联时仍然需要从 Alpaca Paper 核对订单与仓位。
+
+## 本次离线部署检查
+
+`python3 -X utf8 -m unittest discover -s tests -p test_deploy.py -v` 在 Linux 临时目录实际执行了凭据读取/保存、runner 模式转发、合成部署包 SHA256 检查，以及安装器内的 manifest 校验和原子 runtime 导入。覆盖已有账本保留、导入中断后重试、来源变更拒绝、秘密配置排除和 API/Discord 配置边界。
+`bash -n deploy/linux/install.sh` 检查 shell 语法；实际运行 `systemd-analyze calendar` 解析 timer 的原始表达式，冬季基准 `2026-01-01 00:00:00 UTC` 的下一次启动为 `14:25 UTC`，夏季基准 `2026-07-01 00:00:00 UTC` 为 `13:25 UTC`，均对应美东 09:25。
+完整安装器的用户创建、包管理、真实目录权限迁移、`systemctl daemon-reload`、服务启动/停止、timer 的实际触发、SSH/Windows 上传和真实凭据/网络均未执行或验证；不能据此声明服务器已经上线。

@@ -1,0 +1,2 @@
+# Separate environment: this distribution shares its import name with discord.py.
+discord.py-self==2.1.0

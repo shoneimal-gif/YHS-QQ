@@ -34,6 +34,8 @@ STATE_VERSION = 1
 OCC = re.compile(r"^([A-Z]{1,6})(\d{6})([CP])(\d{8})$")
 TICKER = re.compile(r"^[A-Z]{1,6}$")
 TERMINAL = {"filled", "canceled", "cancelled", "expired", "rejected", "failed", "voided"}
+KNOWN_PENDING = {"new", "accepted", "pending_new", "accepted_for_bidding", "partially_filled",
+                 "pending_cancel", "pending_replace", "stopped", "suspended"}
 ACTIVE_STATUSES = {"ENTRY_INTENT", "ENTRY_UNKNOWN", "PENDING_ENTRY", "OPEN", "EXIT_INTENT", "EXIT_UNKNOWN", "PENDING_EXIT", "HOLD"}
 CSV_FIELDS = [
     "position_id", "ticker", "action", "contract_symbol", "strike", "entry_time",
@@ -384,29 +386,71 @@ class AlpacaPaperTrader:
                 position = AlpacaPosition(**values)
                 if position.status not in ACTIVE_STATUSES | {"CLOSED", "CANCELLED"} or not OCC.fullmatch(position.contract_symbol):
                     raise ValueError("状态中的期权或订单状态无效")
-                if not self._allowed_ticker(position.ticker) or not isinstance(position.quantity, int) or not 1 <= position.quantity <= self.policy.max_contracts_per_trade or not position.entry_client_order_id:
+                if not self._allowed_ticker(position.ticker) or isinstance(position.quantity, bool) or not isinstance(position.quantity, int) or not 1 <= position.quantity <= self.policy.max_contracts_per_trade or not position.entry_client_order_id:
                     raise ValueError("状态持仓归属或数量无效")
-                for name in ("entry_limit_price", "entry_option_price", "filled_quantity", "exit_filled_quantity", "exit_order_filled_quantity", "exit_order_notional_usd", "exit_proceeds_usd", "strike", "peak_roi_pct", "max_adverse_roi_pct"):
+                for name in ("entry_limit_price", "entry_option_price", "filled_quantity", "exit_filled_quantity", "exit_order_filled_quantity", "exit_order_notional_usd", "exit_proceeds_usd", "strike", "fee_reserve_usd"):
+                    if number(getattr(position, name), name) < 0:
+                        raise ValueError("成交金额/数量/风险预留不能为负")
+                for name in ("peak_roi_pct", "max_adverse_roi_pct"):
                     number(getattr(position, name), name)
                 if not 0 <= position.exit_filled_quantity <= position.filled_quantity <= position.quantity:
                     raise ValueError("成交数量不一致")
                 if position.filled_quantity != int(position.filled_quantity) or position.exit_filled_quantity != int(position.exit_filled_quantity):
                     raise ValueError("期权成交数量必须为整数")
+                if (position.exit_order_filled_quantity != int(position.exit_order_filled_quantity)
+                        or not 0 <= position.exit_order_filled_quantity <= position.exit_filled_quantity
+                        or position.exit_order_notional_usd > position.exit_proceeds_usd + 1e-8
+                        or position.entry_limit_price <= 0
+                        or (position.filled_quantity > 0 and not 0 < position.entry_option_price <= position.entry_limit_price + 1e-8)
+                        or (position.exit_filled_quantity == 0 and position.exit_proceeds_usd != 0)):
+                    raise ValueError("累计成交与每单金额账本不一致")
                 if not isinstance(position.exit_realized_by_day, dict):
                     raise ValueError("部分成交日期账本无效")
                 for day, amount in position.exit_realized_by_day.items():
                     date.fromisoformat(day)
                     number(amount, "部分成交PnL")
-                if position.status == "CLOSED" and (position.exit_filled_quantity != position.filled_quantity or position.realized_pnl is None or position.exit_option_price is None):
-                    raise ValueError("平仓状态缺少完整券商成交")
+                if not math.isclose(sum(position.exit_realized_by_day.values()), position.partial_realized_pnl, abs_tol=1e-6):
+                    raise ValueError("已确认成交PnL与日期账本不一致")
+                if position.status == "CLOSED":
+                    if (position.filled_quantity <= 0 or position.exit_filled_quantity != position.filled_quantity
+                            or position.exit_order_state != "filled" or position.exit_time is None
+                            or position.realized_pnl is None or position.exit_option_price is None
+                            or not math.isclose(number(position.realized_pnl, "已平仓PnL"), position.partial_realized_pnl, abs_tol=1e-6)
+                            or not math.isclose(number(position.exit_option_price, "平仓均价", positive=True) * position.exit_filled_quantity * MULTIPLIER, position.exit_proceeds_usd, abs_tol=1e-6)):
+                        raise ValueError("平仓状态缺少完整券商成交或金额不一致")
+                elif position.realized_pnl is not None or position.realized_roi_pct is not None:
+                    raise ValueError("未完整平仓不能保存整笔已实现收益")
+                if (position.status == "CANCELLED" and (position.filled_quantity != 0 or position.exit_filled_quantity != 0)
+                        or position.status in {"OPEN", "EXIT_INTENT", "EXIT_UNKNOWN", "PENDING_EXIT", "HOLD"} and position.remaining_quantity <= 0
+                        or position.status in {"ENTRY_INTENT", "ENTRY_UNKNOWN", "PENDING_ENTRY"} and position.filled_quantity >= position.quantity):
+                    raise ValueError("持仓状态与实际剩余数量不一致，不能释放或遗漏资金")
+                if position.status in {"EXIT_INTENT", "EXIT_UNKNOWN", "PENDING_EXIT"} and not position.exit_client_order_id:
+                    raise ValueError("退出意图缺少用于恢复的client_order_id")
                 if position.status in {"ENTRY_INTENT", "EXIT_INTENT"}:
                     position.status = "ENTRY_UNKNOWN" if position.status == "ENTRY_INTENT" else "EXIT_UNKNOWN"
                     position.hold_reason = "重启发现提交意图，需按client_order_id查询，不盲目重提"
                 loaded.append(position)
             if len({item.signal_id for item in loaded}) != len(loaded):
                 raise ValueError("状态signal_id重复")
+            if loaded and not self.account_id:
+                raise ValueError("已有订单意图/持仓的账本必须绑定原账户")
+            identifiers = [value for item in loaded for value in
+                           (item.entry_client_order_id, item.exit_client_order_id) if value]
+            if len(set(identifiers)) != len(identifiers):
+                raise ValueError("状态client_order_id重复")
             self.positions = loaded
             self._latched_halts = set(payload.get("latched_halts", []))
+            pending = payload.get("pending_notifications", {})
+            if not isinstance(pending, dict):
+                raise ValueError("待发通知账本无效")
+            # This is the durable bridge to the independently persisted outbox.
+            # Older ledgers did not include this additive field.
+            from wecom_notifications import _normalise_event
+            for identifier, event in pending.items():
+                normalised = _normalise_event(event)
+                if identifier != normalised["event_id"]:
+                    raise ValueError("待发通知ID不一致")
+                self._notification_events[identifier] = normalised
         except (OSError, ValueError, TypeError, KeyError) as exc:
             raise AlpacaLedgerError(f"Alpaca账本无法安全恢复：{exc}；不会重新创建虚拟预算") from exc
 
@@ -421,6 +465,12 @@ class AlpacaPaperTrader:
                 stream.flush()
                 os.fsync(stream.fileno())
             os.replace(temporary, path)
+            if os.name != "nt":
+                directory = os.open(path.parent, os.O_RDONLY | getattr(os, "O_DIRECTORY", 0))
+                try:
+                    os.fsync(directory)
+                finally:
+                    os.close(directory)
         except (OSError, ValueError, TypeError) as exc:
             if temporary is not None:
                 try:
@@ -429,36 +479,59 @@ class AlpacaPaperTrader:
                     pass
             raise AlpacaLedgerError(f"无法原子保存Alpaca账本：{exc}；必须停止执行并保留订单ID供恢复") from exc
 
-    def _persist(self) -> None:
-        payload = {"schema_version": STATE_VERSION, "account_id": self.account_id,
+    def _state_payload(self) -> dict[str, Any]:
+        return {"schema_version": STATE_VERSION, "account_id": self.account_id,
                    "policy_hash": self._policy_hash, "policy": serialized(asdict(self.policy)),
                    "positions": serialized([asdict(item) for item in self.positions]),
-                   "latched_halts": sorted(self._latched_halts)}
-        self._atomic_write(self.state_path, lambda stream: json.dump(payload, stream, ensure_ascii=False, indent=2, allow_nan=False))
+                   "latched_halts": sorted(self._latched_halts),
+                   "pending_notifications": self._notification_events}
+
+    def _save_state(self) -> None:
+        self._atomic_write(self.state_path, lambda stream: json.dump(self._state_payload(), stream, ensure_ascii=False, indent=2, allow_nan=False))
+
+    def _persist(self) -> None:
+        self._save_state()
         # Trade state is committed first. Notification failures never change order/risk state.
         if self.notification_sink is not None:
-            pending, self._notification_events = self._notification_events, {}
-            for identifier, event in pending.items():
+            acknowledged = {}
+            for identifier, event in list(self._notification_events.items()):
                 try:
                     accepted = self.notification_sink(event)
                 except Exception:
                     accepted = False
-                if not accepted:
-                    self._notification_events[identifier] = event
+                if accepted is True:
+                    acknowledged[identifier] = event
+                else:
                     LOGGER.warning("订单通知未能全部入队，后续持久化时重试；交易账本已保存")
+            if acknowledged:
+                for identifier in acknowledged:
+                    self._notification_events.pop(identifier, None)
+                try:
+                    self._save_state()
+                except AlpacaLedgerError:
+                    # Both queues retain the same IDs; restart enqueue is idempotent.
+                    self._notification_events.update(acknowledged)
+                    raise
 
     def _queue_order_notice(self, position: AlpacaPosition, kind: str, now: datetime, *,
                             entry: bool, client_id: str | None = None,
                             order_id: str | None = None, requested: float | None = None,
                             filled: float = 0, price: float | None = None,
-                            new_fill: float | None = None) -> None:
+                            new_fill: float | None = None,
+                            new_notional: float | None = None,
+                            broker_status: str | None = None,
+                            confirmed_price: float | None = None) -> None:
         if self.notification_sink is None or not self.execute_paper:
             return
         identifier = client_id or (position.entry_client_order_id if entry else position.exit_client_order_id)
         if not identifier:
             return
         side = "buy" if entry else "sell"
-        key = hashlib.sha256(f"{identifier}:{side}:{kind}:{int(filled)}".encode()).hexdigest()
+        if confirmed_price is None and kind == "filled":
+            confirmed_price = price
+        if confirmed_price is None and entry and filled > 0:
+            confirmed_price = position.entry_option_price
+        key = hashlib.sha256(f"{identifier}:{side}:{kind}:{int(filled)}:{price}".encode()).hexdigest()
         event = {
             "event_id": key, "kind": kind, "side": side,
             "ticker": position.ticker, "contract_symbol": position.contract_symbol,
@@ -468,12 +541,26 @@ class AlpacaPaperTrader:
             "requested_quantity": int(requested if requested is not None else
                                       position.quantity if entry else position.remaining_quantity),
             "filled_quantity": int(filled), "price": price,
+            "limit_price": position.entry_limit_price if entry else None,
+            "confirmed_fill_avg_price": confirmed_price,
+            "confirmed_notional_usd": (confirmed_price * filled * MULTIPLIER
+                                       if confirmed_price is not None else None),
             "new_fill_quantity": int(new_fill) if new_fill is not None else None,
+            "new_fill_notional_usd": new_notional,
+            "new_fill_price": (new_notional / (new_fill * MULTIPLIER)
+                               if new_notional is not None and new_fill else None),
+            "cumulative_notional_usd": (price * filled * MULTIPLIER
+                                        if kind == "filled" and price is not None else None),
             "remaining_quantity": int(position.remaining_quantity),
             "order_id": order_id, "client_order_id": identifier,
             "timestamp": now.astimezone(timezone(timedelta(hours=8))).isoformat(),
             "exit_reason": position.exit_reason if not entry else None,
+            "broker_status": broker_status,
             "realized_pnl": position.realized_pnl if kind == "filled" and not entry and position.status == "CLOSED" else None,
+            "new_realized_pnl": (new_notional - position.entry_option_price * (new_fill or 0) * MULTIPLIER
+                                 if kind == "filled" and not entry and new_notional is not None else None),
+            "partial_realized_pnl": (position.partial_realized_pnl
+                                     if not entry and position.exit_filled_quantity > 0 else None),
         }
         self._notification_events[key] = event
 
@@ -797,70 +884,104 @@ class AlpacaPaperTrader:
             return None
 
     def _apply_order(self, position: AlpacaPosition, order: Any, now: datetime, *, entry: bool) -> None:
+        # Validate the entire response before changing any ledger field. In particular,
+        # a broken fill timestamp must not commit quantities/proceeds without PnL.
         if not isinstance(order, dict) or not order.get("id"):
             raise ValueError("券商订单响应缺少订单ID")
         expected_id = position.entry_client_order_id if entry else position.exit_client_order_id
         if str(order.get("client_order_id", "")) != expected_id or symbol_of(order.get("symbol")) != position.contract_symbol or str(order.get("side", "")) != ("buy" if entry else "sell"):
             raise AlpacaLedgerError("订单响应与本地归属不一致，拒绝使用其成交")
         state = str(order.get("status", "")).lower()
+        order_id = str(order["id"])
         previous_order_id = position.entry_order_id if entry else position.exit_order_id
         previous_state = position.entry_order_state if entry else position.exit_order_state
         previous_fill = position.filled_quantity if entry else position.exit_order_filled_quantity
+        if previous_order_id and previous_order_id != order_id:
+            raise AlpacaLedgerError("同一client_order_id返回不同订单ID，必须人工核对替换链")
         filled = number(order.get("filled_qty", 0), "已成交张数")
         maximum_fill = position.quantity if entry else position.remaining_quantity + position.exit_order_filled_quantity
         if number(order.get("qty"), "订单请求张数", positive=True) != maximum_fill:
             raise AlpacaLedgerError("券商订单请求数量与已持久化意图不一致")
-        if not 0 <= filled <= maximum_fill:
-            raise AlpacaLedgerError("券商返回超出本策略数量的成交")
+        if not previous_fill <= filled <= maximum_fill:
+            raise AlpacaLedgerError("券商成交数量倒退或超出本策略数量")
         if filled != int(filled):
-            position.status = "HOLD"
-            position.hold_reason = "标准期权出现非整数部分成交，需人工核对"
+            raise AlpacaLedgerError("标准期权出现非整数部分成交，需人工核对")
+        if state not in TERMINAL | KNOWN_PENDING:
+            if entry:
+                position.entry_order_id, position.entry_order_state = order_id, state
+                position.status = "ENTRY_UNKNOWN"
+            else:
+                position.exit_order_id, position.exit_order_state = order_id, state
+                position.status = "EXIT_UNKNOWN"
+            position.hold_reason = "券商订单状态未知，保留最后确认成交与预算，禁止重复提交"
+            position.last_reconciled_at = now
             self._blocks.add(position.hold_reason)
+            if state != previous_state or previous_order_id != order_id:
+                self._queue_order_notice(position, "unknown", now, entry=entry,
+                                         client_id=expected_id, order_id=order_id,
+                                         requested=maximum_fill, filled=previous_fill,
+                                         broker_status=state or "missing",
+                                         confirmed_price=(position.entry_option_price if entry else
+                                                          position.exit_order_notional_usd / (previous_fill * MULTIPLIER))
+                                                          if previous_fill > 0 else None)
             return
+        if ((state == "filled") != (filled == maximum_fill)
+                or (state == "partially_filled" and not 0 < filled < maximum_fill)
+                or (state in {"rejected", "failed", "voided"} and filled != 0)):
+            raise ValueError("券商订单状态与累计成交量矛盾，等待后续明确成交确认")
+        average = source_time = None
+        added_quantity = filled - previous_fill
+        previous_notional = (position.entry_cost if entry else position.exit_order_notional_usd)
+        added_notional = 0.0
+        notional = 0.0
+        if filled > 0:
+            average = number(order.get("filled_avg_price"), "入场成交均价" if entry else "出场成交均价", positive=True)
+            source_time = parse_time(order.get("filled_at") or order.get("updated_at") or now)
+            if age(now, source_time) < -5:
+                raise ValueError("券商成交时间在未来，不能提前记入账本")
+            notional = average * filled * MULTIPLIER
+            number(notional, "累计成交金额", positive=True)
+            added_notional = notional - previous_notional
+            if entry and average > position.entry_limit_price + 1e-8:
+                raise AlpacaLedgerError("入场成交均价超过买入限价，需人工核对")
+            if added_quantity > 0 and added_notional <= 0:
+                raise AlpacaLedgerError("新增成交的累计金额未增加，需人工核对成交更正")
+            if entry and added_quantity > 0 and added_notional > position.entry_limit_price * added_quantity * MULTIPLIER + 1e-8:
+                raise AlpacaLedgerError("本次新增买入成交价格超过限价，需人工核对")
+
         if entry:
-            position.entry_order_id, position.entry_order_state = str(order["id"]), state
+            position.entry_order_id, position.entry_order_state = order_id, state
             if position.entry_cancel_requested and state not in TERMINAL | {"pending_cancel"}:
-                # GET明确仍活动后可重新发DELETE；未知取消不释放预算。
                 position.entry_cancel_requested = False
-            if filled < position.filled_quantity:
-                raise AlpacaLedgerError("券商入场成交数量倒退，需核对更正成交")
             if filled > 0:
-                price = number(order.get("filled_avg_price"), "入场成交均价", positive=True)
-                if price > position.entry_limit_price + 1e-8:
-                    raise AlpacaLedgerError("入场成交均价超过买入限价，需人工核对")
-                if filled != position.filled_quantity or price != position.entry_option_price:
+                if added_quantity or added_notional:
                     position.last_fill_observed_at = now
                 if position.filled_quantity == 0:
-                    position.entry_time = parse_time(order.get("filled_at") or order.get("updated_at") or now)
-                position.filled_quantity, position.entry_option_price = filled, price
+                    position.entry_time = source_time
+                position.filled_quantity, position.entry_option_price = filled, average
                 position.status = "OPEN" if state in TERMINAL else "PENDING_ENTRY"
                 position.hold_reason = None
             elif state in TERMINAL:
                 position.status = "CANCELLED"
+                position.hold_reason = None
             else:
                 position.status = "PENDING_ENTRY"
+                position.hold_reason = None
         else:
-            position.exit_order_id, position.exit_order_state = str(order["id"]), state
-            if filled < position.exit_order_filled_quantity:
-                raise AlpacaLedgerError("出场成交数量倒退或超过已买入数量")
-            added_quantity = filled - position.exit_order_filled_quantity
+            position.exit_order_id, position.exit_order_state = order_id, state
             if filled > 0:
-                average = number(order.get("filled_avg_price"), "出场成交均价", positive=True)
-                notional = average * filled * MULTIPLIER
-                added_proceeds = notional - position.exit_order_notional_usd
-                if added_quantity or added_proceeds:
+                if added_quantity or added_notional:
                     position.last_fill_observed_at = now
-                position.exit_proceeds_usd += added_proceeds
+                position.exit_proceeds_usd += added_notional
                 position.exit_filled_quantity += added_quantity
-                source_time = parse_time(order.get("filled_at") or order.get("updated_at") or now)
                 day = source_time.astimezone(eastern_timezone()).date().isoformat()
-                position.exit_realized_by_day[day] = position.exit_realized_by_day.get(day, 0.0) + added_proceeds - position.entry_option_price * added_quantity * MULTIPLIER
+                position.exit_realized_by_day[day] = position.exit_realized_by_day.get(day, 0.0) + added_notional - position.entry_option_price * added_quantity * MULTIPLIER
                 position.exit_order_notional_usd = notional
                 position.exit_option_price = position.exit_proceeds_usd / (position.exit_filled_quantity * MULTIPLIER)
             position.exit_order_filled_quantity = filled
-            if position.exit_filled_quantity == position.filled_quantity and position.filled_quantity > 0:
+            if state == "filled" and position.exit_filled_quantity == position.filled_quantity and position.filled_quantity > 0:
                 position.status = "CLOSED"
-                position.exit_time = parse_time(order.get("filled_at") or order.get("updated_at") or now)
+                position.exit_time = source_time
                 position.exit_spot = position.last_spot
                 position.realized_pnl = position.exit_proceeds_usd - position.entry_cost
                 position.realized_roi_pct = (position.exit_option_price / position.entry_option_price - 1) * 100
@@ -870,29 +991,31 @@ class AlpacaPaperTrader:
                 position.hold_reason = None
                 LOGGER.info("Paper券商已完整成交平仓%s，PnL$%.2f（未含未知费用），原因%s", position.contract_symbol, position.realized_pnl, position.exit_reason)
             elif state in TERMINAL:
-                # 已确认旧卖单结束，后续poll才允许新的sell_to_close。
+                # A terminal partial exit confirms only its actual fills. Persist those
+                # before allowing a new client_order_id for the unsold contracts.
                 position.status = "OPEN"
                 position.exit_order_id = None
                 position.exit_client_order_id = None
                 position.exit_cancel_requested = False
                 position.exit_order_filled_quantity = 0.0
                 position.exit_order_notional_usd = 0.0
-                position.hold_reason = "上次出场订单未成交且已终止，待下一轮核对后重试退出"
+                position.hold_reason = "上次出场订单已终止，剩余仓位待下一轮核对后重试退出"
             else:
                 position.status = "PENDING_EXIT"
+                position.hold_reason = None
         position.last_reconciled_at = now
         # Preserve the validated response before terminal exits clear per-order fields.
         client_id = str(order["client_order_id"])
-        order_id = str(order["id"])
         if previous_order_id != order_id and state not in {"rejected", "failed", "voided", "canceled", "cancelled", "expired"}:
             self._queue_order_notice(position, "submitted", now, entry=entry,
                                      client_id=client_id, order_id=order_id, requested=maximum_fill,
-                                     filled=filled, price=position.entry_limit_price if entry else None)
-        if filled > previous_fill:
+                                     filled=filled, price=position.entry_limit_price if entry else None,
+                                     broker_status=state, confirmed_price=average)
+        if added_quantity > 0 or (filled > 0 and added_notional != 0):
             self._queue_order_notice(position, "filled", now, entry=entry,
                                      client_id=client_id, order_id=order_id, requested=maximum_fill,
-                                     filled=filled, price=float(order["filled_avg_price"]),
-                                     new_fill=filled - previous_fill)
+                                     filled=filled, price=average, new_fill=added_quantity,
+                                     new_notional=added_notional, broker_status=state)
         if state != previous_state or previous_order_id != order_id:
             if state in {"rejected", "failed", "voided"}:
                 kind = "rejected"
@@ -903,7 +1026,8 @@ class AlpacaPaperTrader:
             if kind:
                 self._queue_order_notice(position, kind, now, entry=entry,
                                          client_id=client_id, order_id=order_id,
-                                         requested=maximum_fill, filled=filled)
+                                         requested=maximum_fill, filled=filled,
+                                         broker_status=state, confirmed_price=average)
 
     def _find_order(self, position: AlpacaPosition, *, entry: bool) -> dict[str, Any] | None:
         order_id = position.entry_order_id if entry else position.exit_order_id
@@ -990,9 +1114,12 @@ class AlpacaPaperTrader:
             self._queue_order_notice(position, "rejected", now, entry=False,
                                      client_id=identifier, requested=int(payload["qty"]))
         except (ValueError, TypeError, KeyError):
+            position.status = "EXIT_UNKNOWN"
+            position.hold_reason = "退出响应无法安全解析，保留订单意图和已确认仓位，等待对账"
+            self._network_ok = False
+            self._blocks.add("退出订单响应无法安全解析")
             self._queue_order_notice(position, "unknown", now, entry=False,
                                      client_id=identifier, requested=int(payload["qty"]))
-            raise
         self._persist()
 
     def _mark_quote(self, position: AlpacaPosition, now: datetime, raw: Any) -> str | None:

@@ -1,0 +1,5 @@
+# The upstream project is https://github.com/ib-api-reloaded/ib_async.
+# Python 3.10+; separate environment from Discord collection dependencies.
+ib_async==2.1.0
+# Used by the existing optional Discord notification adapter.
+requests==2.34.2

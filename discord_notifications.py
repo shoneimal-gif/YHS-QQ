@@ -196,6 +196,7 @@ class DiscordNotifier:
         self._webhook = validate_webhook(webhook)
         self._path = Path(state_path)
         self._condition = threading.Condition()
+        self._closing = False
         self._stopping = False
         self._storage_failed = False
         self._halted_status = None
@@ -216,15 +217,25 @@ class DiscordNotifier:
                         raise ValueError
                 self._sent = dict(data["sent_ids"])
                 for name in ("blocked_until", "next_request_at"):
-                    value = _nonnegative_seconds(data.get(name, 0))
+                    raw_value = data.get(name, 0)
+                    if type(raw_value) not in {int, float}:
+                        raise ValueError
+                    value = _nonnegative_seconds(raw_value)
                     if value is None:
                         raise ValueError
                     setattr(self, "_" + name, value)
                 seen = set(self._sent)
                 for item in data["pending"]:
+                    if not isinstance(item, dict):
+                        raise ValueError
                     event = _normalise_event(item["event"])
-                    attempts = max(0, int(item.get("attempts", 0)))
-                    due = _nonnegative_seconds(item.get("next_attempt", 0))
+                    attempts = item.get("attempts", 0)
+                    if type(attempts) is not int or attempts < 0:
+                        raise ValueError
+                    raw_due = item.get("next_attempt", 0)
+                    if type(raw_due) not in {int, float}:
+                        raise ValueError
+                    due = _nonnegative_seconds(raw_due)
                     if due is None:
                         raise ValueError
                     if event["event_id"] not in seen:
@@ -236,6 +247,16 @@ class DiscordNotifier:
             self._save()
         except Exception:
             raise ValueError("Discord 通知队列无法读取或保存，通知已停用。") from None
+        # Persist wall-clock deadlines for restart recovery, but also observe
+        # elapsed time in this process: a forward clock correction must not
+        # shorten Discord's rate-limit or offline retry delays.
+        now, monotonic_now = time.time(), time.monotonic()
+        self._blocked_monotonic = monotonic_now + max(0, self._blocked_until - now)
+        self._request_monotonic = monotonic_now + max(0, self._next_request_at - now)
+        self._retry_monotonic = {
+            item["event"]["event_id"]: monotonic_now + max(0, item["next_attempt"] - now)
+            for item in self._pending
+        }
         self._worker = threading.Thread(target=self._run, name="discord-notifications", daemon=True)
         self._worker.start()
 
@@ -251,6 +272,12 @@ class DiscordNotifier:
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temporary, self._path)
+        if hasattr(os, "O_DIRECTORY"):
+            descriptor = os.open(self._path.parent, os.O_RDONLY | os.O_DIRECTORY)
+            try:
+                os.fsync(descriptor)
+            finally:
+                os.close(descriptor)
 
     def enqueue(self, event: dict) -> bool:
         try:
@@ -260,7 +287,7 @@ class DiscordNotifier:
                 if identity in self._sent or any(
                         item["event"]["event_id"] == identity for item in self._pending):
                     return True
-                if self._stopping or self._storage_failed:
+                if self._closing or self._stopping or self._storage_failed:
                     return False
                 item = {"event": event, "attempts": 0, "next_attempt": 0.0}
                 self._pending.append(item)
@@ -285,22 +312,28 @@ class DiscordNotifier:
                         self._condition.wait(timeout=60)
                         continue
                     now = time.time()
-                    eligible_at = max(self._blocked_until, self._next_request_at)
-                    item = next((item for item in self._pending
-                                 if item["next_attempt"] <= now), None)
-                    if item is not None and eligible_at <= now:
+                    monotonic_now = time.monotonic()
+                    rate_delay = max(self._blocked_until - now,
+                                     self._next_request_at - now,
+                                     self._blocked_monotonic - monotonic_now,
+                                     self._request_monotonic - monotonic_now, 0.0)
+                    # Preserve the order of submitted, partial-fill and final
+                    # events even when the first event needs an offline retry.
+                    item = self._pending[0] if self._pending else None
+                    retry_delay = (max(item["next_attempt"] - now,
+                                       self._retry_monotonic.get(item["event"]["event_id"], 0)
+                                       - monotonic_now, 0.0)
+                                   if item is not None else 60.0)
+                    delay = max(rate_delay, retry_delay)
+                    if item is not None and delay == 0:
                         break
-                    if item is None:
-                        item_due = min((item["next_attempt"] for item in self._pending), default=now + 60)
-                        delay = max(eligible_at, item_due) - now
-                    else:
-                        delay = eligible_at - now
                     self._condition.wait(timeout=max(0.01, min(delay, 60)))
                 if self._stopping or self._storage_failed:
                     return
                 # Persist a reservation before HTTP, so a restart observes an
                 # outstanding request's minimum spacing and timeout allowance.
                 self._next_request_at = time.time() + _HTTP_TIMEOUT + _MIN_INTERVAL
+                self._request_monotonic = time.monotonic() + _HTTP_TIMEOUT + _MIN_INTERVAL
                 try:
                     self._save()
                 except Exception as exc:
@@ -324,19 +357,29 @@ class DiscordNotifier:
                 if self._stopping or self._storage_failed:
                     return
                 now = time.time()
+                monotonic_now = time.monotonic()
                 self._next_request_at = now + _MIN_INTERVAL
+                self._request_monotonic = monotonic_now + _MIN_INTERVAL
                 if failure is None:
                     self._pending.remove(item)
+                    self._retry_monotonic.pop(item["event"]["event_id"], None)
                     self._sent[item["event"]["event_id"]] = receipt.message_id[-8:]
                     self._blocked_until = max(self._blocked_until, now + receipt.blocked_for)
+                    self._blocked_monotonic = max(self._blocked_monotonic,
+                                                  monotonic_now + receipt.blocked_for)
                 else:
                     item["attempts"] += 1
                     delay = min(600, 30 * 2 ** min(item["attempts"] - 1, 5))
                     if failure.status == 429:
                         delay = failure.retry_after if failure.retry_after is not None else 60.0
                         self._blocked_until = max(self._blocked_until, now + delay)
+                        self._blocked_monotonic = max(self._blocked_monotonic,
+                                                      monotonic_now + delay)
                     self._blocked_until = max(self._blocked_until, now + failure.blocked_for)
+                    self._blocked_monotonic = max(self._blocked_monotonic,
+                                                  monotonic_now + failure.blocked_for)
                     item["next_attempt"] = now + delay
+                    self._retry_monotonic[item["event"]["event_id"]] = monotonic_now + delay
                     if failure.permanent:
                         self._halted_status = failure.status
                         LOG.warning("Discord Webhook 配置或权限错误，发送已暂停；请修正配置后重启")
@@ -350,6 +393,9 @@ class DiscordNotifier:
     def close(self, timeout: float = 5) -> None:
         deadline = time.monotonic() + max(0, timeout)
         with self._condition:
+            # Closing drains only already persisted work. Accepting new events
+            # while waiting would race with releasing the account ledger lock.
+            self._closing = True
             while (self._pending and self._worker.is_alive()
                    and not self._storage_failed and self._halted_status is None):
                 remaining = deadline - time.monotonic()

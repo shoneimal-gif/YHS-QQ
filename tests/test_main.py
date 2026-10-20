@@ -31,6 +31,31 @@ def without_simulation_flags(value):
     return value
 
 
+class FakeTimer:
+    """受控线程生命周期：取消后仍需 join，模拟 Timer 的关闭接口。"""
+
+    def __init__(self, interval, function):
+        self.interval, self.function = interval, function
+        self.started = self.cancelled = self.joined = False
+        self.daemon = False
+        self.join_timeout = None
+
+    def start(self):
+        self.started = True
+
+    def cancel(self):
+        self.cancelled = True
+
+    def is_alive(self):
+        return self.started and not self.joined
+
+    def join(self, timeout=None):
+        if not self.cancelled:
+            raise AssertionError("关闭定时器前必须先取消")
+        self.joined = True
+        self.join_timeout = timeout
+
+
 class MainCase(unittest.TestCase):
     def setUp(self) -> None:
         self.temp = tempfile.TemporaryDirectory(prefix="main-test-", dir=Path(__file__).parent,
@@ -196,18 +221,10 @@ class MainCase(unittest.TestCase):
             def now(cls, tz=None):
                 return clock["now"].astimezone(tz) if tz else clock["now"]
 
-        class FakeTimer:
+        class RecordingTimer(FakeTimer):
             def __init__(self, interval, function):
-                self.interval, self.function = interval, function
-                self.started = self.cancelled = False
-                self.daemon = False
+                super().__init__(interval, function)
                 state["timer"] = self
-
-            def start(self):
-                self.started = True
-
-            def cancel(self):
-                self.cancelled = True
 
         class Client(MockYHSClient):
             def __init__(self, settings):
@@ -227,12 +244,15 @@ class MainCase(unittest.TestCase):
                 self.close_calls += 1
 
         with patch.object(app, "datetime", FakeDateTime), patch.object(app, "YHSClient", Client), \
-                patch.object(app.threading, "Timer", FakeTimer), patch.object(app.os_signal, "signal", return_value=None):
+                patch.object(app.threading, "Timer", RecordingTimer), patch.object(app.os_signal, "signal", return_value=None):
             report = app.run_live(config)
         self.assertFalse(report["failed"])
         self.assertEqual(report["exit_reason"], "SESSION_CLOSE")
         self.assertTrue(state["timer"].started)
         self.assertTrue(state["timer"].cancelled)
+        self.assertTrue(state["timer"].joined)
+        self.assertFalse(state["timer"].is_alive())
+        self.assertEqual(state["timer"].join_timeout, 15.0)
         self.assertEqual(state["timer"].interval, 60.0)
         self.assertGreaterEqual(state["client"].close_calls, 2)
         self.assertEqual(state["client"].calls.get("volume_top"), 1)
@@ -247,15 +267,12 @@ class MainCase(unittest.TestCase):
             def now(cls, tz=None):
                 return frozen.astimezone(tz) if tz else frozen
 
-        class FakeTimer:
-            def __init__(self, *args):
-                self.daemon = False
+        timers = []
 
-            def start(self):
-                pass
-
-            def cancel(self):
-                pass
+        class RecordingTimer(FakeTimer):
+            def __init__(self, interval, function):
+                super().__init__(interval, function)
+                timers.append(self)
 
         class Client(MockYHSClient):
             def budget_status(self):
@@ -266,14 +283,53 @@ class MainCase(unittest.TestCase):
                 raise APIError("模拟榜单请求失败")
 
         with patch.object(app, "datetime", FakeDateTime), patch.object(app, "YHSClient", Client), \
-                patch.object(app.threading, "Timer", FakeTimer), patch.object(app.os_signal, "signal", return_value=None):
+                patch.object(app.threading, "Timer", RecordingTimer), patch.object(app.os_signal, "signal", return_value=None):
             first = app.run_live(config)
             second = app.run_live(config)
         self.assertTrue(first["failed"])
         self.assertEqual(second["exit_reason"], "EMPTY_UNIVERSE")
         self.assertEqual(calls["volume"], 1)
+        self.assertEqual(len(timers), 2)
+        self.assertTrue(all(timer.cancelled and timer.joined and not timer.is_alive() for timer in timers))
         session = json.loads((self.directory / "sessions" / f"{self.day}.json").read_text(encoding="utf-8"))
         self.assertTrue(session["volume_claimed"])
+
+    def test_sigterm_cancels_requests_and_restores_signal_handlers(self) -> None:
+        config = SystemConfig(api_key="synthetic-key", output_dir=self.directory)
+        frozen = datetime(2026, 10, 9, 15, 59, tzinfo=eastern_timezone())
+        handlers = {}
+        old_handler = lambda *_: None
+        state = {"closed": 0}
+
+        class FakeDateTime(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return frozen.astimezone(tz) if tz else frozen
+
+        def register(signum, handler):
+            handlers[signum] = handler
+            return old_handler
+
+        class Client(MockYHSClient):
+            def budget_status(self):
+                return {"normal_available": 95000, "available": 100000}
+
+            def fetch_heatmap(self, ticker, **kwargs):
+                handlers[app.os_signal.SIGTERM](app.os_signal.SIGTERM, None)
+                raise RequestCancelled("模拟 SIGTERM 取消在途请求")
+
+            def close(self):
+                state["closed"] += 1
+
+        with patch.object(app, "datetime", FakeDateTime), patch.object(app, "YHSClient", Client), \
+                patch.object(app.threading, "Timer", FakeTimer), patch.object(app.os_signal, "signal", side_effect=register):
+            report = app.run_live(config)
+        self.assertEqual(report["exit_reason"], "USER_INTERRUPT")
+        self.assertFalse(report["failed"])
+        self.assertEqual(report["open_positions"], 0)
+        self.assertGreaterEqual(state["closed"], 2)
+        self.assertIs(handlers[app.os_signal.SIGTERM], old_handler)
+        self.assertIs(handlers[app.os_signal.SIGINT], old_handler)
 
 
 if __name__ == "__main__":

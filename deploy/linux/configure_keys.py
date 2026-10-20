@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import getpass
+import argparse
 import json
 import os
 from pathlib import Path
@@ -17,7 +18,12 @@ DESTINATION = DIRECTORY / "credentials.json"
 KEY_NAMES = ("ALPACA_API_KEY", "ALPACA_SECRET_KEY", "YHS_API_KEY")
 
 
-def configure() -> int:
+def configure(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Save root-only cloud API and optional Discord credentials")
+    channel = parser.add_mutually_exclusive_group()
+    channel.add_argument("--discord", action="store_true", help="Also enter the Discord Webhook using hidden input")
+    channel.add_argument("--remove-discord", action="store_true", help="Remove Discord configuration while preserving runtime state")
+    args = parser.parse_args(argv)
     if os.geteuid() != 0:
         print("Run this command with sudo on the server", file=sys.stderr)
         return 1
@@ -36,6 +42,17 @@ def configure() -> int:
         return 1
     os.chmod(DIRECTORY, 0o700)
     values = {}
+    # Preserve an existing Discord binding when rotating the API keys. The
+    # explicit removal flag also lets an administrator replace invalid JSON.
+    if DESTINATION.exists() and not (args.discord or args.remove_discord):
+        from runner import read_credentials_file
+        try:
+            existing = read_credentials_file(DESTINATION)
+        except (OSError, ValueError, TypeError):
+            print("Existing credentials are invalid; repair using --discord or --remove-discord; no changes saved", file=sys.stderr)
+            return 1
+        if "YHS_DISCORD_WEBHOOK" in existing:
+            values["YHS_DISCORD_WEBHOOK"] = existing["YHS_DISCORD_WEBHOOK"]
     warnings.simplefilter("error", getpass.GetPassWarning)
     for name in KEY_NAMES:
         value = getpass.getpass(f"{name} (hidden): ").strip()
@@ -43,6 +60,16 @@ def configure() -> int:
             print("All three keys must be nonempty and contain no control characters; no changes saved", file=sys.stderr)
             return 1
         values[name] = value
+    if args.discord:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+        try:
+            from discord_notifications import validate_webhook
+            values["YHS_DISCORD_WEBHOOK"] = validate_webhook(getpass.getpass("Discord Webhook URL (hidden): "))
+        except ValueError:
+            print("Discord Webhook must be an official discord.com HTTPS URL; no changes saved", file=sys.stderr)
+            return 1
+        finally:
+            sys.path.pop(0)
     temporary: Path | None = None
     try:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=DIRECTORY,

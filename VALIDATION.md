@@ -67,3 +67,15 @@ Peak MFE≥15%的方向正确率60%，平均Peak MFE55.86%。
 增加平仓胜率、盈利因子、平均已实现盈亏/ROI、平仓交易曲线回撤和分组统计。
 
 上述容量调整仅完成静态审阅与源文件/JSON读取，没有运行新增测试、查询账户或提交模拟订单。之前的只读连接记录仍为之前的查询时点。
+
+## 2026-10-11 Codex 云端离线修复与验证
+
+本次从 GitHub 最新 main `3c6b268` 开始，在 Linux Python 3.12.14 实际完成 192 项 unittest，全部通过，未跳过测试。修复前复现 72 项中的两项 FakeTimer 接口报错；修复后包含通知、Paper 订单恢复、REST 隔离、Linux 部署组件、SIGTERM 与主入口通知选择的新增检查。
+
+实际完整命令：`PYTHONPATH=/tmp/yhs-offline-guard python3 -X utf8 -m unittest discover -s tests -v`，退出码 0。
+实际回放：`python3 -X utf8 main.py --replay --date 2026-10-09 --seed 7 --output-dir 新临时目录/output`（同样启用离线 socket 守卫），退出码 0。完成 78 个观察时刻、5 笔合成平仓、0 笔未平仓、真实 API 配额消耗 0；JSON/CSV/账本数量和金额一致。
+
+Discord-only、持久化通知桥、队列去重/限流/断网重试/关闭、确认部分成交与整笔收益区分均通过模拟检查。部署仅验证临时凭据、打包清单、原子账本迁移和 DST 表达式；没有安装或启用常驻服务/timer。
+没有读取个人密钥或私有账本，没有调用真实行情/券商接口、发送真实通知或提交/撤销订单。真实网络、盘中 Paper 流程、完整 systemd 安装运行、Windows/SSH、迟到成交更正/替换链与盈利能力仍未验证。
+
+完整中文证据见 [CLOUD_VALIDATION_REPORT.md](CLOUD_VALIDATION_REPORT.md)，机器可读统计与源码摘要见 [CLOUD_VALIDATION_SUMMARY.json](CLOUD_VALIDATION_SUMMARY.json)。以上是本次实际离线结果，与此前 Windows 和只读账户查询记录分开。

@@ -15,3 +15,24 @@ auth.json
 credentials.json
 .private_deploy/
 .private_config/
+
+# Current development: private state never belongs in public GitHub.
+ALPHA_DENNIS_PAPER.md
+alpha_discord/config.paper.json
+alpha_discord/config.observer.json
+stock_quant/config.paper.json
+**/.venv/
+**/data/
+**/reports/
+*.sqlite
+*.sqlite3
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite3-wal
+*.sqlite3-shm
+*.db
+*.db-wal
+*.db-shm
+*.zip
+*.tar.gz
+*.dpapi

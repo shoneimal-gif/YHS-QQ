@@ -519,30 +519,6 @@ def run_alpaca_paper(config: SystemConfig, capture_path: Path | None = None, *,
                 if execute_paper:
                     order_sinks: list[Any] = []
                     try:
-                        from wecom_notifications import WeComNotifier, load_webhook
-                        webhook = load_webhook(Path(__file__).resolve().parent)
-                        if webhook:
-                            notifier = WeComNotifier(webhook, account_dir / "wecom_outbox.json")
-                            created_notifiers.append(notifier)
-                            order_sinks.append(notifier.enqueue)
-                            LOGGER.info("企业微信订单推送已启用；提交、成交及失败状态会分别通知")
-                        else:
-                            LOGGER.info("未配置企业微信机器人；订单推送未启用")
-                    except Exception:
-                        LOGGER.warning("企业微信配置或通知队列无法加载，订单推送未启用；不影响Paper账本")
-                    try:
-                        from pushplus_notifications import PushPlusNotifier, load_token
-                        token = load_token(Path(__file__).resolve().parent)
-                        if token:
-                            notifier = PushPlusNotifier(token, account_dir / "pushplus_outbox.json")
-                            created_notifiers.append(notifier)
-                            order_sinks.append(notifier.enqueue)
-                            LOGGER.info("pushplus 个人微信订单推送已启用；提交、成交及失败状态会分别通知")
-                        else:
-                            LOGGER.info("未配置pushplus Token；个人微信订单推送未启用")
-                    except Exception:
-                        LOGGER.warning("pushplus配置或通知队列无法加载，个人微信推送未启用；不影响Paper账本")
-                    try:
                         from discord_notifications import DiscordNotifier, load_webhook as load_discord_webhook
                         webhook = load_discord_webhook(Path(__file__).resolve().parent)
                         if webhook:

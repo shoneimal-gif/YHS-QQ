@@ -23,6 +23,7 @@ SOURCE_FILES = (
 LINUX_FILES = (
     "install.sh", "runner.py", "configure_keys.py", "yhs-qq.service", "yhs-qq.timer",
 )
+PRIVATE_NAMES = frozenset({"credentials.json", "auth.json", "discord.json", "wecom.json", "pushplus.json"})
 
 
 @contextlib.contextmanager
@@ -68,7 +69,8 @@ def runtime_files():
             continue
         if path.suffix.lower() in (".lock", ".tmp", ".log", ".pyc"):
             continue
-        if path.name.startswith(".env") or path.name in ("credentials.json", "auth.json"):
+        if (path.name.startswith(".env") or path.name in PRIVATE_NAMES
+                or ".private_config" in relative.parts):
             raise RuntimeError("runtime 中发现密钥文件，拒绝打包。")
         result.append(path)
     return result
@@ -80,8 +82,9 @@ def main():
     args = parser.parse_args()
     paths = [ROOT / name for name in SOURCE_FILES]
     paths += [ROOT / "deploy" / "linux" / name for name in LINUX_FILES]
-    if (ROOT / "CLOUD_DEPLOY.md").exists():
-        paths.append(ROOT / "CLOUD_DEPLOY.md")
+    for name in ("CLOUD_DEPLOY.md", "DISCORD_NOTIFICATIONS.md"):
+        if (ROOT / name).exists():
+            paths.append(ROOT / name)
     for path in paths:
         if not path.is_file() or path.is_symlink():
             raise RuntimeError(f"部署文件缺失或含符号链接：{path.relative_to(ROOT)}")
