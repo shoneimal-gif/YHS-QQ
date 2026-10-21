@@ -3,6 +3,13 @@
 当前开发主线：读取 Dennis 原频道的已验证 AlphaAgent 期权信号，交由独立跟单程序执行
 Alpaca **模拟盘**，并将结果推送 Discord。旧 YHS QQ 策略代码保留。
 
+## IBKR 模拟盘自动跟单
+
+另有独立的 **IBKR 模拟盘自动跟单**入口 `ibkr_paper/`，支持已验证 AlphaAgent
+信号对应的期权限价单、确认成交、归属、预算、重启对账和 Discord 通知。
+默认执行关闭，只接受绑定的 DU 模拟账户与本机 Paper 端口；不接管手工持仓。
+详见 [IBKR_PAPER_GUIDE.md](IBKR_PAPER_GUIDE.md)。
+
 ## IBKR 实盘只读观察
 
 新增独立的 `ibkr_bridge/`，沿用已验证的原信号来源，通过本机已登录的 TWS / IB Gateway

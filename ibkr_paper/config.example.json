@@ -1,0 +1,41 @@
+{
+  "schema_version": 1,
+  "mode": "ibkr_paper",
+  "paper_only": true,
+  "execute_paper": false,
+  "paper_login_confirmed": false,
+  "ibkr": {
+    "host": "127.0.0.1",
+    "port": 4002,
+    "client_id": 17932,
+    "request_timeout_seconds": 6,
+    "quote_timeout_seconds": 3,
+    "max_quote_age_seconds": 2,
+    "account_sha256": null
+  },
+  "source": {
+    "kind": "ssh_live_readonly",
+    "ssh_host": null,
+    "ssh_user": null,
+    "ssh_port": 22,
+    "identity_file": null,
+    "known_hosts_file": null
+  },
+  "strategy": {
+    "max_open_signal_age_seconds": 30,
+    "max_close_signal_age_seconds": 120,
+    "max_buy_premium_pct": 3,
+    "target_debit_usd": 4000,
+    "min_debit_usd": 3000,
+    "max_debit_usd": 5000,
+    "fee_reserve_usd": 2,
+    "max_option_exposure_usd": 10000,
+    "max_contracts_per_trade": 50,
+    "entry_cancel_after_seconds": 30,
+    "poll_seconds": 1
+  },
+  "notifications": {
+    "enabled": false,
+    "use_existing_discord": true
+  }
+}
