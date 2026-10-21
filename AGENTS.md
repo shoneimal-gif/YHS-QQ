@@ -17,6 +17,21 @@ loopback. User login and 2FA stay in the official local client. Never implement
 an order-submission, modification, cancellation, exercise, what-if order or
 execution-enabling switch. Do not infer ownership or adopt existing positions.
 
+`ibkr_paper/` is a separate authorized simulated-trading executor. Only it may
+submit/cancel simulated orders through literal loopback, Paper defaults
+4002/7497, nonzero client ID, one authenticated DU account and exact SHA256
+binding. DU suffixes may contain uppercase letters and digits. A port alone
+does not prove Paper mode. Require private Paper-login/execution flags plus
+explicit `--execute-paper`; preflight and observation must have no write path.
+Never add live ports, live-account writes, arbitrary account selection or
+execution support to `ibkr_bridge/`. Keep its Read-Only API workflow intact.
+For Paper only, the user must disable Gateway's Read-Only API after verifying
+the simulated login. Preserve all intent, execution, ownership and unknown
+submission evidence. The SDK's completedOrder omits API orderId/clientId and
+has explicit filledQuantity in the Order object: never infer zero fills or
+restore identities from prefix/default values. Use exact permId associations
+from confirmed executions/orders or the bound durable journal.
+
 ## Preserve the authorized policy
 
 - Alpaca execution is Paper endpoint only. The IBKR sidecar permits live-account
